@@ -4,23 +4,32 @@ import readline
 import sounddevice as sd
 
 from example_module import ExampleModule
+from subtractive import SubtractiveSynth
+
+chain = None
 
 def callback(outdata, frames, time, status):
-    for module in chain:
+    outdata[:, 0] = 0
+    for module in chain or []:
         module.process(outdata, outdata)
 
-with sd.OutputStream(channels=1, callback=callback) as stream:
-    modules = {"sine": ExampleModule(stream.samplerate)}
-    chain = [modules[name] for name in ["sine"]]
+with sd.OutputStream(channels=1, callback=callback, blocksize=1024) as stream:
+    modules = {"subtractive": SubtractiveSynth(stream.samplerate)} # {"sine": ExampleModule(stream.samplerate)}
+    chain = [modules[name] for name in ["subtractive"]]
     try:
         while stream.active:
-            command, *params = input("> ").split(' ')
+            try:
+                command, *params = input("> ").split(" ", 1)
+            except EOFError:
+                # Allow Ctrl+D to exit.
+                break
             if command == "get":
                 module, param = params[0].split(".")
                 print(getattr(modules[module], param))
             elif command == "set":
-                module, param = params[0].split(".")
-                setattr(modules[module], param, ast.literal_eval(params[1]))
+                param_spec, value = params[0].split(" ", 1)
+                module, param = param_spec.split(".")
+                setattr(modules[module], param, ast.literal_eval(value))
             elif command == "help":
                 print("Available commands:")
                 print("  get <module.param>")
@@ -32,5 +41,6 @@ with sd.OutputStream(channels=1, callback=callback) as stream:
                     for attr in vars(module):
                         print(f"    {name}.{attr}")
     except KeyboardInterrupt:
+        # Allow Ctrl+C to exit.
         pass
 
