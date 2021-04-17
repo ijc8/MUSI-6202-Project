@@ -5,6 +5,7 @@ import sounddevice as sd
 
 from example_module import ExampleModule
 from subtractive import SubtractiveSynth
+from wah import AutoWah
 
 chain = None
 
@@ -13,9 +14,10 @@ def callback(outdata, frames, time, status):
     for module in chain or []:
         module.process(outdata, outdata)
 
-with sd.OutputStream(channels=1, callback=callback, blocksize=1024) as stream:
-    modules = {"subtractive": SubtractiveSynth(stream.samplerate)} # {"sine": ExampleModule(stream.samplerate)}
-    chain = [modules[name] for name in ["subtractive"]]
+with sd.OutputStream(channels=1, callback=callback, blocksize=2048) as stream:
+    modules = {"subtractive": SubtractiveSynth(stream.samplerate), "autowah": AutoWah(stream.samplerate, (100, 2000), 1, 2)}
+    # {"sine": ExampleModule(stream.samplerate)}
+    chain = [modules[name] for name in ["subtractive", "autowah"]]
     try:
         while stream.active:
             try:
@@ -27,9 +29,21 @@ with sd.OutputStream(channels=1, callback=callback, blocksize=1024) as stream:
                 module, param = params[0].split(".")
                 print(getattr(modules[module], param))
             elif command == "set":
-                param_spec, value = params[0].split(" ", 1)
+                try:
+                    param_spec, value = params[0].split(" ", 1)
+                except ValueError:
+                    print("Missing value.")
+                    continue
                 module, param = param_spec.split(".")
-                setattr(modules[module], param, ast.literal_eval(value))
+                try:
+                    value = ast.literal_eval(value)
+                except ValueError:
+                    # Just treat it as a string.
+                    pass
+                except SyntaxError as e:
+                    print(e)
+                    continue
+                setattr(modules[module], param, value)
             elif command == "help":
                 print("Available commands:")
                 print("  get <module.param>")
