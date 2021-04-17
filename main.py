@@ -3,6 +3,7 @@ import readline
 
 import sounddevice as sd
 
+from delay import Delay
 from example_module import ExampleModule
 from subtractive import SubtractiveSynth
 from wah import AutoWah
@@ -15,9 +16,13 @@ def callback(outdata, frames, time, status):
         module.process(outdata, outdata)
 
 with sd.OutputStream(channels=1, callback=callback, blocksize=2048) as stream:
-    modules = {"subtractive": SubtractiveSynth(stream.samplerate), "autowah": AutoWah(stream.samplerate, (100, 2000), 1, 2)}
+    modules = {
+        "subtractive": SubtractiveSynth(stream.samplerate),
+        "autowah": AutoWah(stream.samplerate, (100, 2000), 1, 2),
+        "delay": Delay(stream.samplerate, 1.0, 0.5),
+    }
     # {"sine": ExampleModule(stream.samplerate)}
-    chain = [modules[name] for name in ["subtractive", "autowah"]]
+    chain = [modules[name] for name in ["subtractive", "autowah", "delay"]]
     try:
         while stream.active:
             try:
