@@ -5,6 +5,7 @@ import sounddevice as sd
 
 from delay import Delay
 from example_module import ExampleModule
+from quantize import Quantizer
 from subtractive import SubtractiveSynth
 from wah import AutoWah
 
@@ -20,9 +21,10 @@ with sd.OutputStream(channels=1, callback=callback, blocksize=2048) as stream:
         "subtractive": SubtractiveSynth(stream.samplerate),
         "autowah": AutoWah(stream.samplerate, (100, 2000), 1, 2),
         "delay": Delay(stream.samplerate, 1.0, 0.5),
+        "quantizer": Quantizer(stream.samplerate),
     }
     # {"sine": ExampleModule(stream.samplerate)}
-    chain = [modules[name] for name in ["subtractive", "autowah", "delay"]]
+    chain = [modules[name] for name in ["subtractive", "autowah", "delay", "quantizer"]]
     try:
         while stream.active:
             try:
@@ -32,7 +34,10 @@ with sd.OutputStream(channels=1, callback=callback, blocksize=2048) as stream:
                 break
             if command == "get":
                 module, param = params[0].split(".")
-                print(getattr(modules[module], param))
+                if module in modules:
+                    print(getattr(modules[module], param))
+                else:
+                    print(f"No module named '{module}'.")
             elif command == "set":
                 try:
                     param_spec, value = params[0].split(" ", 1)
@@ -48,7 +53,10 @@ with sd.OutputStream(channels=1, callback=callback, blocksize=2048) as stream:
                 except SyntaxError as e:
                     print(e)
                     continue
-                setattr(modules[module], param, value)
+                if module in modules:
+                    setattr(modules[module], param, value)
+                else:
+                    print(f"No module named '{module}'.")
             elif command == "help":
                 print("Available commands:")
                 print("  get <module.param>")
