@@ -16,11 +16,11 @@ def callback(outdata, frames, time, status):
     for module in chain or []:
         module.process(outdata, outdata)
 
-with sd.OutputStream(channels=1, callback=callback, blocksize=2048) as stream:
+with sd.OutputStream(channels=1, callback=callback, blocksize=16384) as stream:
     modules = {
         "subtractive": SubtractiveSynth(stream.samplerate),
-        "autowah": AutoWah(stream.samplerate, (100, 2000), 1, 2),
-        "delay": Delay(stream.samplerate, 1.0, 0.5),
+        "autowah": AutoWah(stream.samplerate, (100, 2000), 0, 0.5),
+        "delay": Delay(stream.samplerate),
         "quantizer": Quantizer(stream.samplerate),
     }
     # {"sine": ExampleModule(stream.samplerate)}
@@ -33,9 +33,12 @@ with sd.OutputStream(channels=1, callback=callback, blocksize=2048) as stream:
                 # Allow Ctrl+D to exit.
                 break
             if command == "get":
-                module, param = params[0].split(".")
+                module, *params = params[0].split(".")
                 if module in modules:
-                    print(getattr(modules[module], param))
+                    value = modules[module]
+                    for param in params:
+                        value = getattr(value, param)
+                    print(value)
                 else:
                     print(f"No module named '{module}'.")
             elif command == "set":
@@ -44,7 +47,7 @@ with sd.OutputStream(channels=1, callback=callback, blocksize=2048) as stream:
                 except ValueError:
                     print("Missing value.")
                     continue
-                module, param = param_spec.split(".")
+                module, *params = param_spec.split(".")
                 try:
                     value = ast.literal_eval(value)
                 except ValueError:
@@ -54,15 +57,19 @@ with sd.OutputStream(channels=1, callback=callback, blocksize=2048) as stream:
                     print(e)
                     continue
                 if module in modules:
-                    setattr(modules[module], param, value)
+                    container = modules[module]
+                    for param in params[:-1]:
+                        container = getattr(container, param)
+                    setattr(container, params[-1], value)
                 else:
                     print(f"No module named '{module}'.")
             elif command == "help":
                 print("Available commands:")
-                print("  get <module.param>")
+                print("  get <module>.<param>")
                 print("  set <module>.<param> <value>")
                 print("  help")
                 print("Modules and parameters:")
+                # TODO: Recursively list parameters for embedded modules.
                 for name, module in modules.items():
                     print("  " + name)
                     for attr in vars(module):
