@@ -16,7 +16,7 @@ class AdditiveSynth(Module):
     def process(self, input_buffer, output_buffer):
         # for freq, amplitude in self.coefficients:
             # output_buffer[:,0] += amplitude * np.sin(2*np.pi*freq*np.arange(len(output_buffer))/self.sample_rate + self.phase*freq)
-        output_buffer[:,0] = np.sum(self.amps * np.sin(2*np.pi*self.freqs*np.arange(len(output_buffer))/self.sample_rate + self.phase*self.freqs), axis=0)
+        output_buffer[:] = np.sum(self.amps * np.sin(2*np.pi*self.freqs*np.arange(len(output_buffer))/self.sample_rate + self.phase*self.freqs), axis=0)
         self.phase += 2*np.pi*len(output_buffer)/self.sample_rate
         self.phase %= 2*np.pi
 
