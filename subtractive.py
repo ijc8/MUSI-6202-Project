@@ -21,6 +21,14 @@ class AdditiveSynth(Module):
         self.phase %= 2*np.pi
 
 
+class NoiseSource(Module):
+    def __init__(self, sample_rate):
+        super().__init__(sample_rate)
+    
+    def process(self, input_buffer, output_buffer):
+        output_buffer[:] = np.random.uniform(-1, 1, output_buffer.shape)
+
+
 class SubtractiveSynth(Module):
     "Various sources with many harmonics (sawtooth, square, noise) + a resonant low-pass filter."
 
@@ -63,7 +71,7 @@ class SubtractiveSynth(Module):
             self.sources = {
                 "sawtooth": AdditiveSynth(self.sample_rate, [(k*self.freq, 2/np.pi*(-1)**k/k) for k in range(1, int(self.sample_rate/2/self.freq)+1)]),
                 "square": AdditiveSynth(self.sample_rate, [(k*self.freq, 4/np.pi/k) for k in range(1, int(self.sample_rate/2/self.freq)+1, 2)]),
-                "noise": NotImplemented,
+                "noise": NoiseSource(self.sample_rate),
             }
 
     def process(self, input_buffer, output_buffer):
