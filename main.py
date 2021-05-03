@@ -27,10 +27,7 @@ quantizer = None
 stream = None
 
 def callback(outdata, *ignored):
-    # Ensure we don't have unbounded history build-up (or dropped samples) in our resampler:
-    # For linear resampler: buf = buffer if resampler.source_time >= -0.2 else buffer[:-1]
-    buf = buffer if resampler.source_time >= -2 else buffer[:-1]
-    # print(buf.shape)
+    buf = buffer[:resampler.get_source_blocksize(BLOCKSIZE)]
     for module in chain:
         module.process(buf, buf)
     resampler.process(buf, outdata)
@@ -40,7 +37,7 @@ def setup():
     global modules, chain, resampler, buffer, quantizer
     print(f"Setup: internal sample rate = {INTERNAL_SAMPLERATE}, external sample rate = {EXTERNAL_SAMPLERATE}")
     resampler = Resampler(INTERNAL_SAMPLERATE, EXTERNAL_SAMPLERATE)
-    buffer = np.zeros(int(np.ceil(INTERNAL_SAMPLERATE / EXTERNAL_SAMPLERATE * BLOCKSIZE)))
+    buffer = resampler.make_source_buffer(BLOCKSIZE)
     quantizer = Quantizer(EXTERNAL_SAMPLERATE)
     modules = {
         "subtractive": SubtractiveSynth(INTERNAL_SAMPLERATE),
