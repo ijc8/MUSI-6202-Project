@@ -1,5 +1,8 @@
 import ast
+import os
 import readline
+import time
+import wave
 
 import numpy as np
 import sounddevice as sd
@@ -23,7 +26,7 @@ buffer = None
 quantizer = None
 stream = None
 
-def callback(outdata, frames, time, status):
+def callback(outdata, *ignored):
     # Ensure we don't have unbounded history build-up (or dropped samples) in our resampler:
     # For linear resampler: buf = buffer if resampler.source_time >= -0.2 else buffer[:-1]
     buf = buffer if resampler.source_time >= -2 else buffer[:-1]
@@ -53,6 +56,7 @@ def help(full=False):
     print("Available commands:")
     print("  start")
     print("  stop")
+    print("  render <duration in seconds> [filename, defaults to 'out.wav']")
     print("  get <module>.<param>")
     print("  set <module>.<param> <value>")
     print("  help")
@@ -87,6 +91,46 @@ try:
                 stream = None
             else:
                 print("Not running!")
+        elif command == "render":
+            duration, *params = params[0].split(" ", 1)
+            duration = float(duration)
+            filename = params[0] if params else "out.wav"
+            if not filename.endswith(".wav"):
+                filename += ".wav"
+            if os.path.exists(filename):
+                overwrite = input(f"File '{filename}' already exists. Overwrite? [y/N] ")
+                if not overwrite.lower().startswith('y'):
+                    print("Not overwriting.")
+                    continue
+            if stream:
+                stream.stop()
+                stream = None
+            with wave.open(filename, 'wb') as w:
+                w.setnchannels(1)
+                # NOTE: For simplicity, we always save a 16-bit wave file, even if the bit depth of the content (post-quantization) is lower.
+                # (Wave files can only store bit depths in multiples of 8, anyway.)
+                w.setsampwidth(2)
+                w.setframerate(EXTERNAL_SAMPLERATE)
+                # Convert duration to samples.
+                duration = int(duration * EXTERNAL_SAMPLERATE)
+                outdata = np.zeros(BLOCKSIZE)
+                start_time = time.time()
+                for block in range(duration // BLOCKSIZE):
+                    callback(outdata)
+                    w.writeframes((outdata * np.iinfo(np.int16).max).astype(np.int16))
+                    p = int(block * BLOCKSIZE / duration * 50)
+                    progress = '=' * p + ' ' * (50 - p)
+                    print(f"{block * BLOCKSIZE / duration * 100:6.2f}% [{progress}] {block * BLOCKSIZE / EXTERNAL_SAMPLERATE:6.2f}/{duration / EXTERNAL_SAMPLERATE:.2f}", end='\r')
+                # Last block:
+                remainder = duration - (block * BLOCKSIZE)
+                if remainder:
+                    outdata = outdata[:remainder]
+                    callback(outdata)
+                    w.writeframes((outdata * np.iinfo(np.int16).max).astype(np.int16))
+                real_time = time.time() - start_time
+                rendered_time = duration / EXTERNAL_SAMPLERATE
+                print(f"{100:6.2f}% [{'=' * 50}] {rendered_time:6.2f}/{duration / rendered_time:.2f}")
+                print(f"Rendered {rendered_time:.2f}s to '{filename}' in {real_time:.2f}s ({rendered_time/real_time:.2f}x).")
         elif command == "get":
             module, *params = params[0].split(".")
             if module in modules:

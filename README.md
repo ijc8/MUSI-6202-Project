@@ -17,5 +17,9 @@ Example interaction:
     > set subtractive.resonance 2
     > set subtractive.source square
     > set delay.preset chorus
+    > render 10 foo.wav
+    File 'foo.wav' already exists. Overwrite? [y/N] y
+    100.00% [==================================================]  10.00/44100.00
+    Rendered 10.00s to 'foo.wav' in 5.86s (1.71x).
 
 You may see warnings about underruns, but these should stop after a few seconds.
