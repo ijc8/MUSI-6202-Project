@@ -97,27 +97,53 @@ def midi_callback(pitch, velocity):
 def midi_help():
     print("MIDI commands:")
     print("  midi list")
-    print("  midi connect [device name]")
+    print("  midi connect [device name or index, defaults to 0]")
     print("  midi disconnect")
+    print("  midi file <filename>")
 
 def midi_command(params):
     global midi
     command, *params = params.split(" ", 1)
     if command == "list":
         print("Available MIDI inputs:")
-        for name in mido.get_input_names():
-            print("  " + name)
+        for index, name in enumerate(mido.get_input_names()):
+            print(f"  {index}: {name}")
     elif command == "connect":
         if midi:
             print(f"Disconnected from '{midi.port.name}'.")
             midi.disconnect()
-        midi = MIDISource()
-        midi.connect(midi_callback, params[0] if params else None)
+        name = None
+        if params:
+            try:
+                index = int(params[0])
+                name = mido.get_input_names()[index]
+            except ValueError:
+                name = params[0]
+            except IndexError:
+                print(f"No device with index {index}.")
+        try:
+            midi = MIDISource()
+            midi.connect(midi_callback, name)
+        except OSError:
+            print(f"No device named '{name}'.")
+            midi = None
+            return
         print(f"Connected to '{midi.port.name}'.")
     elif command == "disconnect":
         if midi:
             print(f"Disconnected from '{midi.port.name}'.")
             midi.disconnect()
+    elif command == "file":
+        if not params:
+            print("Usage: midi file <filename>")
+            return
+        try:
+            mid = mido.MidiFile(params[0])
+        except:
+            print(f"Failed to open MIDI file '{params[0]}'.")
+            return
+        for message in mid.play():
+            midi_callback(message.note, message.velocity)
     else:
         midi_help()
 
