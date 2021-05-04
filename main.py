@@ -153,7 +153,7 @@ try:
                     w.writeframes((outdata * np.iinfo(np.int16).max).astype(np.int16))
                 real_time = time.time() - start_time
                 rendered_time = duration / EXTERNAL_SAMPLERATE
-                print(f"{100:6.2f}% [{'=' * 50}] {rendered_time:6.2f}/{duration / rendered_time:.2f}")
+                print(f"{100:6.2f}% [{'=' * 50}] {rendered_time:6.2f}/{rendered_time:.2f}")
                 print(f"Rendered {rendered_time:.2f}s to '{filename}' in {real_time:.2f}s ({rendered_time/real_time:.2f}x).")
         elif command == "get":
             module, *params = params[0].split(".")
