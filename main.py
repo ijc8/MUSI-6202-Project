@@ -12,6 +12,7 @@ from example_module import ExampleModule
 from quantize import Quantizer
 from resample import CubicResampler as Resampler
 from subtractive import SubtractiveSynth
+from tremolo import Tremolo
 from wah import AutoWah
 
 
@@ -46,11 +47,12 @@ def setup():
         "subtractive": SubtractiveSynth(INTERNAL_SAMPLERATE),
         "autowah": AutoWah(INTERNAL_SAMPLERATE, (100, 2000), 0, 0.5),
         "delay": Delay(INTERNAL_SAMPLERATE),
+        "tremolo": Tremolo(INTERNAL_SAMPLERATE),
         "resampler": resampler,
         "quantizer": quantizer,
     }
     # NOTE: Chain implicity ends with resampler, quantizer.
-    chain = [modules[name] for name in ["subtractive", "autowah", "delay"]]
+    chain = [modules[name] for name in ["subtractive", "autowah", "tremolo", "delay"]]
 
 def stop():
     global stream, recording_out
