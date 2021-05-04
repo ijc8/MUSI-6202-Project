@@ -25,6 +25,7 @@ resampler = None
 buffer = None
 quantizer = None
 stream = None
+recording_out = None
 
 def callback(outdata, *ignored):
     buf = buffer[:resampler.get_source_blocksize(BLOCKSIZE)]
@@ -32,6 +33,8 @@ def callback(outdata, *ignored):
         module.process(buf, buf)
     resampler.process(buf, outdata)
     quantizer.process(outdata, outdata)
+    if recording_out:
+        recording_out.writeframes((outdata * np.iinfo(np.int16).max).astype(np.int16))
 
 def setup():
     global modules, chain, resampler, buffer, quantizer
@@ -48,6 +51,17 @@ def setup():
     }
     # NOTE: Chain implicity ends with resampler, quantizer.
     chain = [modules[name] for name in ["subtractive", "autowah", "delay"]]
+
+def stop():
+    global stream, recording_out
+    if stream:
+        stream.stop()
+        stream = None
+        if recording_out:
+            recording_out.close()
+            recording_out = None
+        return True
+    return False
 
 def help(full=False):
     print("Available commands:")
@@ -83,11 +97,26 @@ try:
                 assert(stream.samplerate == EXTERNAL_SAMPLERATE)
                 stream.start()
         elif command == "stop":
-            if stream:
-                stream.stop()
-                stream = None
-            else:
+            if not stop():
                 print("Not running!")
+        elif command == "record":
+            filename = params[0] if params else "out.wav"
+            if not filename.endswith(".wav"):
+                filename += ".wav"
+            if os.path.exists(filename):
+                overwrite = input(f"File '{filename}' already exists. Overwrite? [y/N] ")
+                if not overwrite.lower().startswith('y'):
+                    print("Not overwriting.")
+                    continue
+            print(f"Recording to '{filename}'. Type 'stop' to stop.")
+            recording_out = wave.open(filename, 'wb')
+            recording_out.setnchannels(1)
+            recording_out.setsampwidth(2)
+            recording_out.setframerate(EXTERNAL_SAMPLERATE)
+            if not stream:
+                stream = sd.OutputStream(channels=1, callback=callback, blocksize=BLOCKSIZE, samplerate=EXTERNAL_SAMPLERATE)
+                assert(stream.samplerate == EXTERNAL_SAMPLERATE)
+                stream.start()
         elif command == "render":
             duration, *params = params[0].split(" ", 1)
             duration = float(duration)
@@ -99,9 +128,7 @@ try:
                 if not overwrite.lower().startswith('y'):
                     print("Not overwriting.")
                     continue
-            if stream:
-                stream.stop()
-                stream = None
+            stop()
             with wave.open(filename, 'wb') as w:
                 w.setnchannels(1)
                 # NOTE: For simplicity, we always save a 16-bit wave file, even if the bit depth of the content (post-quantization) is lower.
@@ -169,3 +196,5 @@ except KeyboardInterrupt:
     # Allow Ctrl+C to exit.
     print()
     pass
+
+stop()
