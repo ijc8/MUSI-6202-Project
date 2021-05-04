@@ -4,12 +4,14 @@ import readline
 import time
 import wave
 
+import mido
 import numpy as np
 import sounddevice as sd
 
 from delay import Delay
 from envelope import Envelope
 from example_module import ExampleModule
+from midi import MIDISource
 from quantize import Quantizer
 from resample import CubicResampler as Resampler
 from subtractive import SubtractiveSynth
@@ -28,6 +30,7 @@ buffer = None
 quantizer = None
 stream = None
 recording_out = None
+midi = None
 
 def callback(outdata, *ignored):
     buf = buffer[:resampler.get_source_blocksize(BLOCKSIZE)]
@@ -71,10 +74,12 @@ def help(full=False):
     print("Available commands:")
     print("  start")
     print("  stop")
+    print("  record [filename, defaults to 'out.wav']")
     print("  render <duration in seconds> [filename, defaults to 'out.wav']")
     print("  get <module>.<param>")
     print("  set <module>.<param> <value>")
     print("  help")
+    midi_help()
     if full:
         print("Modules and parameters:")
         # TODO: Recursively list parameters for embedded modules.
@@ -85,19 +90,36 @@ def help(full=False):
 
 setup()
 
-### TODO Move this, and terminate the thread properly.
-import mido
+def midi_callback(pitch, velocity):
+    modules["subtractive"].freq = 2**((pitch-69)/12)*440
+    modules["envelope"].trigger(velocity)
 
-def run():
-    with mido.open_input() as port:
-        for message in port:
-            if not message.is_meta and message.type == 'note_on':
-                modules["subtractive"].freq = 2**((message.note-69)/12)*440
-                modules["envelope"].trigger(message.velocity)
+def midi_help():
+    print("MIDI commands:")
+    print("  midi list")
+    print("  midi connect [device name]")
+    print("  midi disconnect")
 
-import threading
-t = threading.Thread(target=run)
-t.start()
+def midi_command(params):
+    global midi
+    command, *params = params.split(" ", 1)
+    if command == "list":
+        print("Available MIDI inputs:")
+        for name in mido.get_input_names():
+            print("  " + name)
+    elif command == "connect":
+        if midi:
+            print(f"Disconnected from '{midi.port.name}'.")
+            midi.disconnect()
+        midi = MIDISource()
+        midi.connect(midi_callback, params[0] if params else None)
+        print(f"Connected to '{midi.port.name}'.")
+    elif command == "disconnect":
+        if midi:
+            print(f"Disconnected from '{midi.port.name}'.")
+            midi.disconnect()
+    else:
+        midi_help()
 
 try:
     while True:
@@ -114,6 +136,8 @@ try:
                 stream = sd.OutputStream(channels=1, callback=callback, blocksize=BLOCKSIZE, samplerate=EXTERNAL_SAMPLERATE)
                 assert(stream.samplerate == EXTERNAL_SAMPLERATE)
                 stream.start()
+        elif command == "midi":
+            midi_command(params[0] if params else '')
         elif command == "stop":
             if not stop():
                 print("Not running!")
