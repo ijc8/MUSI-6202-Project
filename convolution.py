@@ -15,8 +15,9 @@ class ShortConvolver(Module):
 
     def process(self, input_buffer, output_buffer):
         buffer_with_history = np.concatenate((self.history, input_buffer))
-        output_buffer[:] = np.convolve(buffer_with_history, self.impulse_response, mode='valid')
+        # NOTE: The order is important here, since output_buffer refer to the same memory as input_buffer.
         self.history[:] = input_buffer[-len(self.history):]
+        output_buffer[:] = np.convolve(buffer_with_history, self.impulse_response, mode='valid')
  
 
 class ConvolutionFilter(Module):
@@ -24,58 +25,80 @@ class ConvolutionFilter(Module):
 
     def __init__(self, sample_rate, numtaps, cutoff, trans_width):
         super().__init__(sample_rate)
-        taps = signal.remez(numtaps, [0, cutoff - trans_width, cutoff, sample_rate/2], [1, 0], Hz=sample_rate)
-        w, h = signal.freqz(taps, [1], worN=2000)
-        utility.plot_response(sample_rate, w, h, "Low-pass Filter")
-        self.convolver = ShortConvolver(sample_rate, taps)
+        self._order = 30
+        self._freq = 500
+        self._bandwidth = 300  # only relevant for bandpass/bandstop
+        self._transition_width = 200
+        self._type = "lpf"
+        self._rebuild()
+    
+    def _rebuild(self):
+        if self._type == 'lpf':
+            bands = [0, self._freq, self._freq + self._transition_width, self.sample_rate/2]
+            weights = [1, 0]
+        elif self._type == 'hpf':
+            bands = [0, self._freq - self._transition_width, self._freq, self.sample_rate/2]
+            weights = [0, 1]
+        elif self._type == 'bpf':
+            band = (self.freq - self._bandwidth/2, self.freq + self._bandwidth/2)
+            bands = [0, band[0] - self._transition_width, band[0], band[1], band[1] + self._transition_width, self.sample_rate/2]
+            weights = [0, 1, 0]
+        elif self._type == 'bsf':
+            band = (self.freq - self._bandwidth/2, self.freq + self._bandwidth/2)
+            bands = [0, band[0] - self._transition_width, band[0], band[1], band[1] + self._transition_width, self.sample_rate/2]
+            weights = [1, 0, 1]
+        taps = signal.remez(self._order + 1, bands, weights, Hz=self.sample_rate)
+        # TODO: Maybe preserve input history post-rebuild?
+        self.convolver = ShortConvolver(self.sample_rate, taps)
+    
+    def visualize_filter(self):
+        w, h = signal.freqz(self.convolver.impulse_response, [1], worN=2000)
+        utility.plot_response(sample_rate, w, h, "FIR Filter")
+
+    @property
+    def order(self):
+        return self._order
+    
+    @property
+    def freq(self):
+        return self._freq
+
+    @property
+    def bandwidth(self):
+        return self._bandwidth
+    
+    @property
+    def transition_width(self):
+        return self._transition_width
+    
+    @property
+    def type(self):
+        return self._type
+    
+    @order.setter
+    def order(self, value):
+        self._order = value
+        self._rebuild()
+    
+    @freq.setter
+    def freq(self, value):
+        self._freq = value
+        self._rebuild()
+    
+    @bandwidth.setter
+    def bandwidth(self, value):
+        self._bandwidth = value
+        self._rebuild()
+    
+    @transition_width.setter
+    def transition_width(self, value):
+        self._transition_width = value
+        self._rebuild()
+    
+    @type.setter
+    def type(self, value):
+        self._type = value
+        self._rebuild()
     
     def process(self, input_buffer, output_buffer):
         self.convolver.process(input_buffer, output_buffer)
-
-# class delay(Module):
-#     def __init__(self, sample_rate, delayTime=100, delayAmp=0.5):
-#         super().__init__(sample_rate)
-#         self.delayTime = delayTime
-#         self.delayAmp = delayAmp
-
-#     def process(self, input_buffer, output_buffer):
-#         delayLenSamp = round(self.delayTime * self.sample_rate)
-#         impulseResp = np.zeros(delayLenSamp)
-#         impulseResp[0] = 1
-#         impulseResp[-1] = self.delayAmp
-#         #how to report the sound
-#         freqs = np.covolve(input_buffer, impulseResp)
-#         self.process(freqs, input_buffer, output_buffer)
-#         self.time += len(input_buffer) / self.sample_rate
-
-# class combfilter(Module):
-#     def __init__(self, sample_rate, gain, delayT, delayTime, delayAmp):
-#         # def __init__(self, sample_rate, freqm, ft, amp, ramp_amp, resonance):
-#         super().__init__(sample_rate)
-#         self.gain = gain
-#         self.delayT = delayT
-#         self.delay = delay( sample_rate, delayTime, delayAmp)
-#         self.time = 0
-#     def process(self, input_buffer, output_buffer):
-#         for i in range(10):
-#             #freqs+=delay(freqs,time)*gain
-
-#         self.process(freqs, input_buffer, output_buffer)
-#         self.time += len(input_buffer) / self.sample_rate
-
-# class convReverb(Module):
-#     def __init__(self, sample_rate, amp, gain, delayT, delayTime, delayAmp):
-#     # def __init__(self, sample_rate, freqm, ft, amp, ramp_amp, resonance):
-#         super().__init__(sample_rate)
-#         self.combfilter = combfilter(sample_rate, gain, delayT, delayTime, delayAmp)
-#         self.gain = gain
-#         self.amp = amp
-#     def process(self, input_buffer, output_buffer):
-#         c1 = combfilter(input_buffer,31.12,0.827)/4
-#         c2 = combfilter(input_buffer, 36.04, 0.805)/4
-#         c3 = combfilter(input_buffer, 40.44, 0.783)/4
-#         c4 = combfilter(input_buffer, 44.92, 0.764)/4
-#         cTotal=c1+c2+c3+c4
-#         freqs=input_buffer+cTotal*self.amp
-#         self.process(freqs, input_buffer, output_buffer)
-#         self.time += len(input_buffer) / self.sample_rate
