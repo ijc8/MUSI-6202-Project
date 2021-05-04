@@ -8,6 +8,7 @@ import numpy as np
 import sounddevice as sd
 
 from delay import Delay
+from envelope import Envelope
 from example_module import ExampleModule
 from quantize import Quantizer
 from resample import CubicResampler as Resampler
@@ -18,7 +19,7 @@ from wah import AutoWah
 
 INTERNAL_SAMPLERATE = 48000
 EXTERNAL_SAMPLERATE = 44100
-BLOCKSIZE = 4096
+BLOCKSIZE = 512
 
 modules = None
 chain = None
@@ -45,6 +46,7 @@ def setup():
     quantizer = Quantizer(EXTERNAL_SAMPLERATE)
     modules = {
         "subtractive": SubtractiveSynth(INTERNAL_SAMPLERATE),
+        "envelope": Envelope(INTERNAL_SAMPLERATE),
         "autowah": AutoWah(INTERNAL_SAMPLERATE, (100, 2000), 0, 0.5),
         "delay": Delay(INTERNAL_SAMPLERATE),
         "tremolo": Tremolo(INTERNAL_SAMPLERATE),
@@ -52,7 +54,7 @@ def setup():
         "quantizer": quantizer,
     }
     # NOTE: Chain implicity ends with resampler, quantizer.
-    chain = [modules[name] for name in ["subtractive", "autowah", "tremolo", "delay"]]
+    chain = [modules[name] for name in ["subtractive", "envelope", "autowah", "tremolo", "delay"]]
 
 def stop():
     global stream, recording_out
@@ -82,6 +84,20 @@ def help(full=False):
                 print(f"    {name}.{attr}")
 
 setup()
+
+### TODO Move this, and terminate the thread properly.
+import mido
+
+def run():
+    with mido.open_input() as port:
+        for message in port:
+            if not message.is_meta and message.type == 'note_on':
+                modules["subtractive"].freq = 2**((message.note-69)/12)*440
+                modules["envelope"].trigger(message.velocity)
+
+import threading
+t = threading.Thread(target=run)
+t.start()
 
 try:
     while True:

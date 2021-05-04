@@ -42,7 +42,7 @@ class Delay(Module):
         self.time = 0
         self._fixed_delay = 0
         self._mod_amp = 0
-        self.preset = "vibrato"
+        self.preset = "chorus"
     
     @property
     def mod_amp(self):
