@@ -8,6 +8,7 @@ import mido
 import numpy as np
 import sounddevice as sd
 
+from convolution import ConvolutionFilter
 from delay import Delay
 from envelope import Envelope
 from example_module import ExampleModule
@@ -21,7 +22,7 @@ from wah import AutoWah
 
 INTERNAL_SAMPLERATE = 48000
 EXTERNAL_SAMPLERATE = 44100
-BLOCKSIZE = 512
+BLOCKSIZE = 16384
 
 modules = None
 chain = None
@@ -55,9 +56,10 @@ def setup():
         "tremolo": Tremolo(INTERNAL_SAMPLERATE),
         "resampler": resampler,
         "quantizer": quantizer,
+        "convfilter": ConvolutionFilter(INTERNAL_SAMPLERATE, 30, 500, 200),
     }
     # NOTE: Chain implicity ends with resampler, quantizer.
-    chain = [modules[name] for name in ["subtractive", "envelope", "autowah", "tremolo", "delay"]]
+    chain = [modules[name] for name in ["subtractive", "convfilter"]] # "envelope",]] # "autowah", "tremolo", "delay"]]
 
 def stop():
     global stream, recording_out

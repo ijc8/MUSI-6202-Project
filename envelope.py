@@ -20,18 +20,23 @@ class Envelope(Module):
         amp = self.amp
         attack = self.attack * self.sample_rate
         decay = self.decay * self.sample_rate
+        velocity = self.velocity
+        triggered = self.triggered
+        self.triggered = False
         for i in range(len(input_buffer)):
-            if self.triggered:
-                if amp < self.velocity / 127:
-                    amp += self.velocity / 127 / attack
-                    if amp > self.velocity / 127:
-                        amp = self.velocity / 127
+            if triggered:
+                if amp < velocity / 127:
+                    amp += velocity / 127 / attack
+                    if amp > velocity / 127:
+                        amp = velocity / 127
                 else:
-                    self.triggered = False
+                    triggered = False
             else:
                 if amp > 0:
-                    amp -= self.velocity / 127 / decay
+                    amp -= velocity / 127 / decay
                 if amp < 0:
                     amp = 0
             output_buffer[i] = input_buffer[i] * amp
+        if not self.triggered:
+            self.triggered = triggered
         self.amp = amp
