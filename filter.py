@@ -64,7 +64,7 @@ class StateVariableFilter(Module):
 
 # Adapted from http://www.musicdsp.org/showone.php?id=24
 class MoogLPF(Module):
-    def __init__(self, sample_rate, freq=400, resonance=0.1):
+    def __init__(self, sample_rate, freq=10000, resonance=0.1):
         super().__init__(sample_rate)
         self.stage = np.zeros(4)
         self.delay = np.zeros(4)

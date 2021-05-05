@@ -66,10 +66,10 @@ class SynthEngine:
         envelope = Envelope(INTERNAL_SAMPLERATE)
         subtractive = SubtractiveSynth(INTERNAL_SAMPLERATE)
         granular = Granular(INTERNAL_SAMPLERATE)
-        mixer = Mixer(subtractive, granular, 0.7)
+        mixer = Mixer(subtractive, granular, 0.8)
         moog = MoogLPF(INTERNAL_SAMPLERATE)
         convfilter = ConvolutionFilter(INTERNAL_SAMPLERATE)
-        autowah = AutoWah(INTERNAL_SAMPLERATE, (100, 2000), 0, 0.5)
+        autowah = AutoWah(INTERNAL_SAMPLERATE, (100, 2000), 0.5, 0.5)
         tremolo = Tremolo(INTERNAL_SAMPLERATE)
         delay = Delay(INTERNAL_SAMPLERATE)
         self.modules = {
@@ -88,8 +88,9 @@ class SynthEngine:
         # Disable envelope by default, until a MIDI source is specified.
         envelope.mix = 0
         # NOTE: Chain implicity ends with resampler, quantizer.
-        chain = [mixer] # , moog, convfilter, envelope, autowah, tremolo, delay]
+        chain = [mixer, moog, convfilter, envelope, autowah, tremolo, delay]
         self.samplerate = 44100
+        self.gain = 1
 
     def process(self, outdata, *ignored):
         internal_blocksize = resampler.get_source_blocksize(BLOCKSIZE)
@@ -101,6 +102,7 @@ class SynthEngine:
             scratch_buf *= module.mix
             buf *= (1 - module.mix)
             buf += scratch_buf
+        buf *= self.gain
         resampler.process(buf, outdata)
         quantizer.process(outdata, outdata)
         if recording_out:
