@@ -24,26 +24,10 @@ from wah import AutoWah
 
 
 INTERNAL_SAMPLERATE = 48000
-BLOCKSIZE = 512
-
-chain = None
-resampler = None
-buffer = None
-scratch_buffer = None
-quantizer = None
-envelope = None
-stream = None
-recording_out = None
-midi = None
-
-def midi_help():
-    print("MIDI commands:")
-    print("  midi list")
-    print("  midi connect [device name or index, defaults to 0]")
-    print("  midi disconnect")
-    print("  midi file <filename>")
+BLOCKSIZE = 2048
 
 
+# One-off module to combine our two synth sources.
 class Mixer(Module):
     def __init__(self, a, b, mix=0.5):
         self.a = a
@@ -63,9 +47,11 @@ class SynthEngine:
     PARAMETERS = ("gain", "samplerate")
 
     def __init__(self):
-        global resampler, quantizer, envelope, chain
-        quantizer = Quantizer()
-        envelope = Envelope(INTERNAL_SAMPLERATE)
+        self.stream = None
+        self.recording_out = None
+        self.midi = None
+        self.quantizer = Quantizer()
+        self.envelope = Envelope(INTERNAL_SAMPLERATE)
         subtractive = SubtractiveSynth(INTERNAL_SAMPLERATE)
         granular = Granular(INTERNAL_SAMPLERATE)
         mixer = Mixer(subtractive, granular, 0.8)
@@ -78,41 +64,41 @@ class SynthEngine:
             "subtractive": subtractive,
             "moog": moog,
             "convfilter": convfilter,
-            "envelope": envelope,
+            "envelope": self.envelope,
             "autowah": autowah,
             "delay": delay,
             "tremolo": tremolo,
-            "quantizer": quantizer,
+            "quantizer": self.quantizer,
             "engine": self,
             "granular": granular,
             "mixer": mixer,
         }
         # Disable envelope by default, until a MIDI source is specified.
-        envelope.mix = 0
+        self.envelope.mix = 0
         # NOTE: Chain implicity ends with resampler, quantizer.
-        chain = [mixer, moog, convfilter, envelope, autowah, tremolo, delay]
+        self.chain = [mixer, moog, convfilter, self.envelope, autowah, tremolo, delay]
         self.samplerate = 44100
         self.gain = 1
 
     def process(self, outdata, *ignored):
-        internal_blocksize = resampler.get_source_blocksize(BLOCKSIZE)
-        buf = buffer[:internal_blocksize]
-        scratch_buf = scratch_buffer[:internal_blocksize]
+        internal_blocksize = self.resampler.get_source_blocksize(BLOCKSIZE)
+        buf = self.buffer[:internal_blocksize]
+        scratch_buf = self.scratch_buffer[:internal_blocksize]
         buf[:] = 0
-        for module in chain:
+        for module in self.chain:
             module.process(buf, scratch_buf)
             scratch_buf *= module.mix
             buf *= (1 - module.mix)
             buf += scratch_buf
         buf *= self.gain
-        resampler.process(buf, outdata)
-        quantizer.process(outdata, outdata)
-        if recording_out:
-            recording_out.writeframes((outdata * np.iinfo(np.int16).max).astype(np.int16))
+        self.resampler.process(buf, outdata)
+        self.quantizer.process(outdata, outdata)
+        if self.recording_out:
+            self.recording_out.writeframes((outdata * np.iinfo(np.int16).max).astype(np.int16))
 
     def handle_midi(self, pitch, velocity):
         self.modules["subtractive"].freq = 2**((pitch-69)/12)*440
-        envelope.trigger(velocity)
+        self.envelope.trigger(velocity)
 
     @property
     def samplerate(self):
@@ -130,31 +116,28 @@ class SynthEngine:
             self.start_stream()
 
     def setup(self):
-        global resampler, buffer, scratch_buffer
         print(f"Setup: internal sample rate = {INTERNAL_SAMPLERATE}, external sample rate = {self.external_samplerate}, block size = {BLOCKSIZE}")
-        resampler = Resampler(INTERNAL_SAMPLERATE, self.external_samplerate)
-        buffer = resampler.make_source_buffer(BLOCKSIZE)
-        scratch_buffer = resampler.make_source_buffer(BLOCKSIZE)
-        self.modules["resampler"] = resampler
+        self.resampler = Resampler(INTERNAL_SAMPLERATE, self.external_samplerate)
+        self.buffer = self.resampler.make_source_buffer(BLOCKSIZE)
+        self.scratch_buffer = self.resampler.make_source_buffer(BLOCKSIZE)
+        self.modules["resampler"] = self.resampler
 
     def start_stream(self):
-        global stream
-        if stream:
+        if self.stream:
             return False
-        stream = sd.OutputStream(channels=1, callback=self.process, blocksize=BLOCKSIZE, samplerate=self.external_samplerate)
-        assert(stream.samplerate == self.external_samplerate)
-        stream.start()
+        self.stream = sd.OutputStream(channels=1, callback=self.process, blocksize=BLOCKSIZE, samplerate=self.external_samplerate)
+        assert(self.stream.samplerate == self.external_samplerate)
+        self.stream.start()
         return True
 
     def stop_stream(self):
-        global stream, recording_out
-        if not stream:
+        if not self.stream:
             return False
-        stream.stop()
-        stream = None
-        if recording_out:
-            recording_out.close()
-            recording_out = None
+        self.stream.stop()
+        self.stream = None
+        if self.recording_out:
+            self.recording_out.close()
+            self.recording_out = None
         return True
     
     def get_param(self, params):
@@ -172,6 +155,13 @@ class SynthEngine:
                 raise
         return value
 
+    def midi_help(self):
+        print("MIDI commands:")
+        print("  midi list")
+        print("  midi connect [device name or index, defaults to 0]")
+        print("  midi disconnect")
+        print("  midi file <filename>")
+
     def help(self, full=False):
         print("Available commands:")
         print("  start")
@@ -182,7 +172,7 @@ class SynthEngine:
         print("  set <module>.<param> <value>")
         print("  plot <filter module>")
         print("  help")
-        midi_help()
+        self.midi_help()
         if full:
             print("Modules and parameters:")
             # TODO: Recursively list parameters for embedded modules.
@@ -204,7 +194,7 @@ class SynthEngine:
             for index, name in enumerate(mido.get_input_names()):
                 print(f"  {index}: {name}")
         elif command == "connect":
-            if midi:
+            if self.midi:
                 print(f"Disconnected from '{midi.port.name}'.")
                 midi.disconnect()
             name = None
@@ -217,19 +207,20 @@ class SynthEngine:
                 except IndexError:
                     print(f"No device with index {index}.")
             try:
-                midi = MIDISource()
-                midi.connect(self.handle_midi, name)
+                self.midi = MIDISource()
+                self.midi.connect(self.handle_midi, name)
             except OSError:
                 print(f"No device named '{name}'.")
-                midi = None
+                self.midi = None
                 return
-            print(f"Connected to '{midi.port.name}'; enabling envelope.")
-            envelope.mix = 1
+            print(f"Connected to '{self.midi.port.name}'; enabling envelope.")
+            self.envelope.mix = 1
         elif command == "disconnect":
-            if midi:
-                print(f"Disconnected from '{midi.port.name}'; disabling envelope.")
-                midi.disconnect()
-                envelope.mix = 0
+            if self.midi:
+                print(f"Disconnected from '{self.midi.port.name}'; disabling envelope.")
+                self.midi.disconnect()
+                self.midi = None
+                self.envelope.mix = 0
         elif command == "file":
             if not params:
                 print("Usage: midi file <filename>")
@@ -239,16 +230,15 @@ class SynthEngine:
             except:
                 print(f"Failed to open MIDI file '{params[0]}'.")
                 return
-            envelope.mix = 1
+            self.envelope.mix = 1
             for message in mid.play():
                 self.handle_midi(message.note, message.velocity)
-            if not midi:
-                envelope.mix = 0
+            if not self.midi:
+                self.envelope.mix = 0
         else:
-            midi_help()
+            self.midi_help()
 
     def handle_command(self, command, params):
-        global recording_out
         if command == "start":
             if not self.start_stream():
                 print("Already running!")
@@ -267,10 +257,10 @@ class SynthEngine:
                     print("Not overwriting.")
                     return
             print(f"Recording to '{filename}'. Type 'stop' to stop.")
-            recording_out = wave.open(filename, 'wb')
-            recording_out.setnchannels(1)
-            recording_out.setsampwidth(2)
-            recording_out.setframerate(self.external_samplerate)
+            self.recording_out = wave.open(filename, 'wb')
+            self.recording_out.setnchannels(1)
+            self.recording_out.setsampwidth(2)
+            self.recording_out.setframerate(self.external_samplerate)
             self.start_stream()
         elif command == "render":
             duration, *params = params.split(" ", 1)
@@ -374,5 +364,7 @@ class SynthEngine:
 
         self.stop_stream()
 
-engine = SynthEngine()
-engine.run()
+
+if __name__ == '__main__':
+    engine = SynthEngine()
+    engine.run()
