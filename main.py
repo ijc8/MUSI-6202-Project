@@ -202,7 +202,6 @@ class SynthEngine:
                         print(f"    {name}.{param}: {value}")
 
     def midi_command(self, params):
-        global midi
         command, *params = params.split(" ", 1)
         if command == "list":
             print("Available MIDI inputs:")
@@ -210,8 +209,8 @@ class SynthEngine:
                 print(f"  {index}: {name}")
         elif command == "connect":
             if self.midi:
-                print(f"Disconnected from '{midi.port.name}'.")
-                midi.disconnect()
+                print(f"Disconnected from '{self.midi.port.name}'.")
+                self.midi.disconnect()
             name = None
             if params:
                 try:

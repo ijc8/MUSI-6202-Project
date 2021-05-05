@@ -7,10 +7,6 @@ from scipy.io import wavfile
 from module import Module
 
 
-# TODO: reduce duplication
-INTERNAL_SAMPLERATE = 48000
-
-
 class Granular(Module):
 
     PARAMETERS = ("speed", "grain_size", "filename", "overlap", "mix")
@@ -42,7 +38,7 @@ class Granular(Module):
         self._filename = value
         fs, data = wavfile.read(value)
         self.data = data[:, 0].astype(np.float) / np.iinfo(data.dtype).max
-        self.wav_factor = fs / INTERNAL_SAMPLERATE
+        self.wav_factor = fs / self.sample_rate
         self.grain()
 
     @property

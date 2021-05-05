@@ -12,6 +12,7 @@ Requirements:
 - Three modulated effects: auto-wah, tremolo, modulated delay-line with feedback (load presets with `set delay.preset <chorus, vibrato, flanger...>`).
 - Convolution-based filtering. (Automated FIR filter design via Parks-McClellan.)
 - Several filters: SVF, FIR (as described above), and an LPF emulating the classic Moog ladder filter. There are multiple instances of the SVF (as submodules of the subtractive synth and auto-wah).
+  Filters may be visualized with `plot <filter module>`.
 - All modules have a `mix` parameter controlling the balance between wet and dry.
 - Input musical data via `midi connect` or `midi file`.
 - Audio output is streaming by default (run `start`), may optionally be recorded live (`record`) or rendered (`render`).
