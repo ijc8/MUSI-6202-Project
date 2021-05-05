@@ -16,6 +16,10 @@ Example interaction:
     > set subtractive.freq 300
     > set subtractive.resonance 2
     > set subtractive.source square
+    > set engine.samplerate 22050
+    > set engine.samplerate 8000
+    > set engine.samplerate 1000
+    > set engine.samplerate 44100
     > set delay.preset chorus
     > render 10 foo.wav
     File 'foo.wav' already exists. Overwrite? [y/N] y

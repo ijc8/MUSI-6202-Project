@@ -3,8 +3,8 @@ import numpy as np
 from module import Module
 
 class Quantizer(Module):
-    def __init__(self, sample_rate, depth=16, dither='triangular'):
-        super().__init__(sample_rate)
+    def __init__(self, depth=16, dither='triangular'):
+        super().__init__(None)  # NOTE: Sample rate is irrelevant for this module.
         self.depth = depth
         self.dither = dither
 

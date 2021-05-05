@@ -22,7 +22,6 @@ from wah import AutoWah
 
 
 INTERNAL_SAMPLERATE = 48000
-EXTERNAL_SAMPLERATE = 44100
 BLOCKSIZE = 512
 
 modules = None
@@ -42,38 +41,6 @@ def callback(outdata, *ignored):
     quantizer.process(outdata, outdata)
     if recording_out:
         recording_out.writeframes((outdata * np.iinfo(np.int16).max).astype(np.int16))
-
-def setup():
-    global modules, chain, resampler, buffer, quantizer
-    print(f"Setup: internal sample rate = {INTERNAL_SAMPLERATE}, external sample rate = {EXTERNAL_SAMPLERATE}, block size = {BLOCKSIZE}")
-    resampler = Resampler(INTERNAL_SAMPLERATE, EXTERNAL_SAMPLERATE)
-    buffer = resampler.make_source_buffer(BLOCKSIZE)
-    quantizer = Quantizer(EXTERNAL_SAMPLERATE)
-    modules = {
-        "subtractive": SubtractiveSynth(INTERNAL_SAMPLERATE),
-        "moog": MoogLPF(INTERNAL_SAMPLERATE),
-        "convfilter": ConvolutionFilter(INTERNAL_SAMPLERATE),
-        "envelope": Envelope(INTERNAL_SAMPLERATE),
-        "autowah": AutoWah(INTERNAL_SAMPLERATE, (100, 2000), 0, 0.5),
-        "delay": Delay(INTERNAL_SAMPLERATE),
-        "tremolo": Tremolo(INTERNAL_SAMPLERATE),
-        "resampler": resampler,
-        "quantizer": quantizer,
-        "engine": synth,
-    }
-    # NOTE: Chain implicity ends with resampler, quantizer.
-    chain = [modules[name] for name in ["subtractive", "moog", "convfilter"]] # "envelope", "autowah", "tremolo", "delay"]]
-
-def stop():
-    global stream, recording_out
-    if stream:
-        stream.stop()
-        stream = None
-        if recording_out:
-            recording_out.close()
-            recording_out = None
-        return True
-    return False
 
 def help(full=False):
     print("Available commands:")
@@ -150,31 +117,75 @@ def midi_command(params):
     else:
         midi_help()
 
-class Synth:
+class SynthEngine:
     def __init__(self):
-        pass
+        global modules, resampler, quantizer, chain
+        quantizer = Quantizer()
+        modules = {
+            "subtractive": SubtractiveSynth(INTERNAL_SAMPLERATE),
+            "moog": MoogLPF(INTERNAL_SAMPLERATE),
+            "convfilter": ConvolutionFilter(INTERNAL_SAMPLERATE),
+            "envelope": Envelope(INTERNAL_SAMPLERATE),
+            "autowah": AutoWah(INTERNAL_SAMPLERATE, (100, 2000), 0, 0.5),
+            "delay": Delay(INTERNAL_SAMPLERATE),
+            "tremolo": Tremolo(INTERNAL_SAMPLERATE),
+            "quantizer": quantizer,
+            "engine": self,
+        }
+        # NOTE: Chain implicity ends with resampler, quantizer.
+        chain = [modules[name] for name in ["subtractive", "moog", "convfilter"]] # "envelope", "autowah", "tremolo", "delay"]]
+        self.samplerate = 44100
 
     @property
     def samplerate(self):
-        return EXTERNAL_SAMPLERATE
+        return self.external_samplerate
     
     @samplerate.setter
     def samplerate(self, value):
-        raise NotImplementedError
+        restart = self.stop_stream()
+        if restart:
+            print("Stopping the stream to change the sample rate. (This will interrupt recording.)")
+        self.external_samplerate = value
+        self.setup()
+        if restart:
+            print("Restarting stream.")
+            self.start_stream()
+
+    def setup(self):
+        global modules, chain, resampler, buffer, quantizer
+        print(f"Setup: internal sample rate = {INTERNAL_SAMPLERATE}, external sample rate = {self.external_samplerate}, block size = {BLOCKSIZE}")
+        resampler = Resampler(INTERNAL_SAMPLERATE, self.external_samplerate)
+        buffer = resampler.make_source_buffer(BLOCKSIZE)
+        modules["resampler"] = resampler
+
+    def start_stream(self):
+        global stream
+        if stream:
+            return False
+        stream = sd.OutputStream(channels=1, callback=callback, blocksize=BLOCKSIZE, samplerate=self.external_samplerate)
+        assert(stream.samplerate == self.external_samplerate)
+        stream.start()
+        return True
+
+    def stop_stream(self):
+        global stream, recording_out
+        if not stream:
+            return False
+        stream.stop()
+        stream = None
+        if recording_out:
+            recording_out.close()
+            recording_out = None
+        return True
 
     def handle_command(self, command, params):
-        global stream
         if command == "start":
-            if stream:
+            if not self.start_stream():
                 print("Already running!")
-            else:
-                stream = sd.OutputStream(channels=1, callback=callback, blocksize=BLOCKSIZE, samplerate=EXTERNAL_SAMPLERATE)
-                assert(stream.samplerate == EXTERNAL_SAMPLERATE)
-                stream.start()
         elif command == "midi":
             midi_command(params)
         elif command == "stop":
-            if not stop():
+            if not self.stop_stream():
                 print("Not running!")
         elif command == "record":
             filename = params or "out.wav"
@@ -189,11 +200,8 @@ class Synth:
             recording_out = wave.open(filename, 'wb')
             recording_out.setnchannels(1)
             recording_out.setsampwidth(2)
-            recording_out.setframerate(EXTERNAL_SAMPLERATE)
-            if not stream:
-                stream = sd.OutputStream(channels=1, callback=callback, blocksize=BLOCKSIZE, samplerate=EXTERNAL_SAMPLERATE)
-                assert(stream.samplerate == EXTERNAL_SAMPLERATE)
-                stream.start()
+            recording_out.setframerate(self.external_samplerate)
+            self.start_stream()
         elif command == "render":
             duration, *params = params.split(" ", 1)
             duration = float(duration)
@@ -205,15 +213,16 @@ class Synth:
                 if not overwrite.lower().startswith('y'):
                     print("Not overwriting.")
                     return
-            stop()
+            if self.stop_stream():
+                print("Stopping the stream to render to file. (Restart with 'start'.)")
             with wave.open(filename, 'wb') as w:
                 w.setnchannels(1)
                 # NOTE: For simplicity, we always save a 16-bit wave file, even if the bit depth of the content (post-quantization) is lower.
                 # (Wave files can only store bit depths in multiples of 8, anyway.)
                 w.setsampwidth(2)
-                w.setframerate(EXTERNAL_SAMPLERATE)
+                w.setframerate(self.external_samplerate)
                 # Convert duration to samples.
-                duration = int(duration * EXTERNAL_SAMPLERATE)
+                duration = int(duration * self.external_samplerate)
                 outdata = np.zeros(BLOCKSIZE)
                 start_time = time.time()
                 for block in range(duration // BLOCKSIZE):
@@ -221,7 +230,7 @@ class Synth:
                     w.writeframes((outdata * np.iinfo(np.int16).max).astype(np.int16))
                     p = int(block * BLOCKSIZE / duration * 50)
                     progress = '=' * p + ' ' * (50 - p)
-                    print(f"{block * BLOCKSIZE / duration * 100:6.2f}% [{progress}] {block * BLOCKSIZE / EXTERNAL_SAMPLERATE:6.2f}/{duration / EXTERNAL_SAMPLERATE:.2f}", end='\r')
+                    print(f"{block * BLOCKSIZE / duration * 100:6.2f}% [{progress}] {block * BLOCKSIZE / self.external_samplerate:6.2f}/{duration / self.external_samplerate:.2f}", end='\r')
                 # Last block:
                 remainder = duration - (block * BLOCKSIZE)
                 if remainder:
@@ -229,7 +238,7 @@ class Synth:
                     callback(outdata)
                     w.writeframes((outdata * np.iinfo(np.int16).max).astype(np.int16))
                 real_time = time.time() - start_time
-                rendered_time = duration / EXTERNAL_SAMPLERATE
+                rendered_time = duration / self.external_samplerate
                 print(f"{100:6.2f}% [{'=' * 50}] {rendered_time:6.2f}/{rendered_time:.2f}")
                 print(f"Rendered {rendered_time:.2f}s to '{filename}' in {real_time:.2f}s ({rendered_time/real_time:.2f}x).")
         elif command == "get":
@@ -289,8 +298,7 @@ class Synth:
             # Allow Ctrl+C to exit.
             print()
 
-        stop()
+        self.stop_stream()
 
-synth = Synth()
-setup()
-synth.run()
+engine = SynthEngine()
+engine.run()
