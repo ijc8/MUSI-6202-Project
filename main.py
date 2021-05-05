@@ -24,7 +24,6 @@ from wah import AutoWah
 INTERNAL_SAMPLERATE = 48000
 BLOCKSIZE = 512
 
-modules = None
 chain = None
 resampler = None
 buffer = None
@@ -35,42 +34,6 @@ stream = None
 recording_out = None
 midi = None
 
-def callback(outdata, *ignored):
-    internal_blocksize = resampler.get_source_blocksize(BLOCKSIZE)
-    buf = buffer[:internal_blocksize]
-    scratch_buf = scratch_buffer[:internal_blocksize]
-    for module in chain:
-        module.process(buf, scratch_buf)
-        scratch_buf *= module.mix
-        buf *= (1 - module.mix)
-        buf += scratch_buf
-    resampler.process(buf, outdata)
-    quantizer.process(outdata, outdata)
-    if recording_out:
-        recording_out.writeframes((outdata * np.iinfo(np.int16).max).astype(np.int16))
-
-def help(full=False):
-    print("Available commands:")
-    print("  start")
-    print("  stop")
-    print("  record [filename, defaults to 'out.wav']")
-    print("  render <duration in seconds> [filename, defaults to 'out.wav']")
-    print("  get <module>.<param>")
-    print("  set <module>.<param> <value>")
-    print("  help")
-    midi_help()
-    if full:
-        print("Modules and parameters:")
-        # TODO: Recursively list parameters for embedded modules.
-        for name, module in modules.items():
-            print("  " + name)
-            for attr in vars(module):
-                print(f"    {name}.{attr}")
-
-def midi_callback(pitch, velocity):
-    modules["subtractive"].freq = 2**((pitch-69)/12)*440
-    envelope.trigger(velocity)
-
 def midi_help():
     print("MIDI commands:")
     print("  midi list")
@@ -78,63 +41,13 @@ def midi_help():
     print("  midi disconnect")
     print("  midi file <filename>")
 
-def midi_command(params):
-    global midi
-    command, *params = params.split(" ", 1)
-    if command == "list":
-        print("Available MIDI inputs:")
-        for index, name in enumerate(mido.get_input_names()):
-            print(f"  {index}: {name}")
-    elif command == "connect":
-        if midi:
-            print(f"Disconnected from '{midi.port.name}'.")
-            midi.disconnect()
-        name = None
-        if params:
-            try:
-                index = int(params[0])
-                name = mido.get_input_names()[index]
-            except ValueError:
-                name = params[0]
-            except IndexError:
-                print(f"No device with index {index}.")
-        try:
-            midi = MIDISource()
-            midi.connect(midi_callback, name)
-        except OSError:
-            print(f"No device named '{name}'.")
-            midi = None
-            return
-        print(f"Connected to '{midi.port.name}'; enabling envelope.")
-        envelope.mix = 1
-    elif command == "disconnect":
-        if midi:
-            print(f"Disconnected from '{midi.port.name}'; disabling envelope.")
-            midi.disconnect()
-            envelope.mix = 0
-    elif command == "file":
-        if not params:
-            print("Usage: midi file <filename>")
-            return
-        try:
-            mid = mido.MidiFile(params[0])
-        except:
-            print(f"Failed to open MIDI file '{params[0]}'.")
-            return
-        module.envelope.mix = 1
-        for message in mid.play():
-            midi_callback(message.note, message.velocity)
-        if not midi:
-            envelope.mix = 0
-    else:
-        midi_help()
 
 class SynthEngine:
     def __init__(self):
-        global modules, resampler, quantizer, envelope, chain
+        global resampler, quantizer, envelope, chain
         quantizer = Quantizer()
         envelope = Envelope(INTERNAL_SAMPLERATE)
-        modules = {
+        self.modules = {
             "subtractive": SubtractiveSynth(INTERNAL_SAMPLERATE),
             "moog": MoogLPF(INTERNAL_SAMPLERATE),
             "convfilter": ConvolutionFilter(INTERNAL_SAMPLERATE),
@@ -148,8 +61,26 @@ class SynthEngine:
         # Disable envelope by default, until a MIDI source is specified.
         envelope.mix = 0
         # NOTE: Chain implicity ends with resampler, quantizer.
-        chain = [modules[name] for name in ["subtractive", "moog", "convfilter", "envelope", "autowah", "tremolo", "delay"]]
+        chain = [self.modules[name] for name in ["subtractive", "moog", "convfilter", "envelope", "autowah", "tremolo", "delay"]]
         self.samplerate = 44100
+
+    def process(self, outdata, *ignored):
+        internal_blocksize = resampler.get_source_blocksize(BLOCKSIZE)
+        buf = buffer[:internal_blocksize]
+        scratch_buf = scratch_buffer[:internal_blocksize]
+        for module in chain:
+            module.process(buf, scratch_buf)
+            scratch_buf *= module.mix
+            buf *= (1 - module.mix)
+            buf += scratch_buf
+        resampler.process(buf, outdata)
+        quantizer.process(outdata, outdata)
+        if recording_out:
+            recording_out.writeframes((outdata * np.iinfo(np.int16).max).astype(np.int16))
+
+    def handle_midi(self, pitch, velocity):
+        self.modules["subtractive"].freq = 2**((pitch-69)/12)*440
+        envelope.trigger(velocity)
 
     @property
     def samplerate(self):
@@ -172,13 +103,13 @@ class SynthEngine:
         resampler = Resampler(INTERNAL_SAMPLERATE, self.external_samplerate)
         buffer = resampler.make_source_buffer(BLOCKSIZE)
         scratch_buffer = resampler.make_source_buffer(BLOCKSIZE)
-        modules["resampler"] = resampler
+        self.modules["resampler"] = resampler
 
     def start_stream(self):
         global stream
         if stream:
             return False
-        stream = sd.OutputStream(channels=1, callback=callback, blocksize=BLOCKSIZE, samplerate=self.external_samplerate)
+        stream = sd.OutputStream(channels=1, callback=self.process, blocksize=BLOCKSIZE, samplerate=self.external_samplerate)
         assert(stream.samplerate == self.external_samplerate)
         stream.start()
         return True
@@ -197,7 +128,7 @@ class SynthEngine:
     def get_param(self, params):
         module, *params = params.split(".")
         try:
-            value = modules[module]
+            value = self.modules[module]
         except KeyError:
             print(f"No such module '{module}'.")
             raise
@@ -209,12 +140,81 @@ class SynthEngine:
                 raise
         return value
 
+    def help(self, full=False):
+        print("Available commands:")
+        print("  start")
+        print("  stop")
+        print("  record [filename, defaults to 'out.wav']")
+        print("  render <duration in seconds> [filename, defaults to 'out.wav']")
+        print("  get <module>.<param>")
+        print("  set <module>.<param> <value>")
+        print("  help")
+        midi_help()
+        if full:
+            print("Modules and parameters:")
+            # TODO: Recursively list parameters for embedded modules.
+            for name, module in self.modules.items():
+                print("  " + name)
+                for attr in vars(module):
+                    print(f"    {name}.{attr}")
+
+    def midi_command(self, params):
+        global midi
+        command, *params = params.split(" ", 1)
+        if command == "list":
+            print("Available MIDI inputs:")
+            for index, name in enumerate(mido.get_input_names()):
+                print(f"  {index}: {name}")
+        elif command == "connect":
+            if midi:
+                print(f"Disconnected from '{midi.port.name}'.")
+                midi.disconnect()
+            name = None
+            if params:
+                try:
+                    index = int(params[0])
+                    name = mido.get_input_names()[index]
+                except ValueError:
+                    name = params[0]
+                except IndexError:
+                    print(f"No device with index {index}.")
+            try:
+                midi = MIDISource()
+                midi.connect(self.handle_midi, name)
+            except OSError:
+                print(f"No device named '{name}'.")
+                midi = None
+                return
+            print(f"Connected to '{midi.port.name}'; enabling envelope.")
+            envelope.mix = 1
+        elif command == "disconnect":
+            if midi:
+                print(f"Disconnected from '{midi.port.name}'; disabling envelope.")
+                midi.disconnect()
+                envelope.mix = 0
+        elif command == "file":
+            if not params:
+                print("Usage: midi file <filename>")
+                return
+            try:
+                mid = mido.MidiFile(params[0])
+            except:
+                print(f"Failed to open MIDI file '{params[0]}'.")
+                return
+            module.envelope.mix = 1
+            for message in mid.play():
+                self.handle_midi(message.note, message.velocity)
+            if not midi:
+                envelope.mix = 0
+        else:
+            midi_help()
+
     def handle_command(self, command, params):
         if command == "start":
             if not self.start_stream():
                 print("Already running!")
         elif command == "midi":
-            midi_command(params)
+            self.midi_command(params)
         elif command == "stop":
             if not self.stop_stream():
                 print("Not running!")
@@ -257,7 +257,7 @@ class SynthEngine:
                 outdata = np.zeros(BLOCKSIZE)
                 start_time = time.time()
                 for block in range(duration // BLOCKSIZE):
-                    callback(outdata)
+                    self.process(outdata)
                     w.writeframes((outdata * np.iinfo(np.int16).max).astype(np.int16))
                     p = int(block * BLOCKSIZE / duration * 50)
                     progress = '=' * p + ' ' * (50 - p)
@@ -266,7 +266,7 @@ class SynthEngine:
                 remainder = duration - (block * BLOCKSIZE)
                 if remainder:
                     outdata = outdata[:remainder]
-                    callback(outdata)
+                    self.process(outdata)
                     w.writeframes((outdata * np.iinfo(np.int16).max).astype(np.int16))
                 real_time = time.time() - start_time
                 rendered_time = duration / self.external_samplerate
@@ -292,8 +292,8 @@ class SynthEngine:
             except SyntaxError as e:
                 print(e)
                 return
-            if module in modules:
-                container = modules[module]
+            if module in self.modules:
+                container = self.modules[module]
                 for param in params[:-1]:
                     container = getattr(container, param)
                 setattr(container, params[-1], value)
@@ -310,12 +310,12 @@ class SynthEngine:
             self.running = False
             return
         elif command == "help":
-            help(full=True)
+            self.help(full=True)
         elif command == "":
             pass
         else:
             print(f"Unrecognized command '{command}'.")
-            help(full=False)
+            self.help(full=False)
 
     def run(self):
         self.running = True
