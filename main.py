@@ -142,10 +142,10 @@ class SynthEngine:
         if self.stream:
             return False
         try:
-            self.stream = sd.OutputStream(channels=1, callback=self.process, blocksize=self._blocksize, samplerate=self.external_samplerate, device=device)
+            self.stream = sd.OutputStream(channels=1, callback=self.process, blocksize=self._blocksize, samplerate=self.external_samplerate, device=device, dither_off=True)
         except sd.PortAudioError:
             print(f"Failed with channels = 1, samplerate={self.external_samplerate}. Falling back to device defaults.")
-            self.stream = sd.OutputStream(callback=self.process, blocksize=self._blocksize, device=device)
+            self.stream = sd.OutputStream(callback=self.process, blocksize=self._blocksize, device=device, dither_off=True)
             print(f"Now using channels = {self.stream.channels}, samplerate={self.stream.samplerate}")
             self.external_samplerate = self.stream.samplerate
             self.setup()
