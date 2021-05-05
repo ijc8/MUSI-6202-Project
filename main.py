@@ -12,8 +12,10 @@ from convolution import ConvolutionFilter
 from delay import Delay
 from envelope import Envelope
 from filter import MoogLPF
+from granular import Granular
 from example_module import ExampleModule
 from midi import MIDISource
+from module import Module
 from quantize import Quantizer
 from resample import CubicResampler as Resampler
 from subtractive import SubtractiveSynth
@@ -42,32 +44,58 @@ def midi_help():
     print("  midi file <filename>")
 
 
+class Mixer(Module):
+    def __init__(self, a, b, mix=0.5):
+        self.a = a
+        self.b = b
+        self.mix = mix
+    
+    def process(self, input_buffer, output_buffer):
+        # NOTE: Overwrites input_buffer.
+        self.a.process(input_buffer, input_buffer)
+        self.b.process(input_buffer, output_buffer)
+        input_buffer *= (1 - self.mix)
+        output_buffer *= self.mix
+        output_buffer += input_buffer
+
+
 class SynthEngine:
     def __init__(self):
         global resampler, quantizer, envelope, chain
         quantizer = Quantizer()
         envelope = Envelope(INTERNAL_SAMPLERATE)
+        subtractive = SubtractiveSynth(INTERNAL_SAMPLERATE)
+        granular = Granular(INTERNAL_SAMPLERATE)
+        mixer = Mixer(subtractive, granular, 0.7)
+        moog = MoogLPF(INTERNAL_SAMPLERATE)
+        convfilter = ConvolutionFilter(INTERNAL_SAMPLERATE)
+        autowah = AutoWah(INTERNAL_SAMPLERATE, (100, 2000), 0, 0.5)
+        tremolo = Tremolo(INTERNAL_SAMPLERATE)
+        delay = Delay(INTERNAL_SAMPLERATE)
         self.modules = {
-            "subtractive": SubtractiveSynth(INTERNAL_SAMPLERATE),
-            "moog": MoogLPF(INTERNAL_SAMPLERATE),
-            "convfilter": ConvolutionFilter(INTERNAL_SAMPLERATE),
+            "subtractive": subtractive,
+            "moog": moog,
+            "convfilter": convfilter,
             "envelope": envelope,
-            "autowah": AutoWah(INTERNAL_SAMPLERATE, (100, 2000), 0, 0.5),
-            "delay": Delay(INTERNAL_SAMPLERATE),
-            "tremolo": Tremolo(INTERNAL_SAMPLERATE),
+            "autowah": autowah,
+            "delay": delay,
+            "tremolo": tremolo,
             "quantizer": quantizer,
             "engine": self,
+            "granular": granular,
+            "mixer": mixer,
         }
         # Disable envelope by default, until a MIDI source is specified.
         envelope.mix = 0
         # NOTE: Chain implicity ends with resampler, quantizer.
-        chain = [self.modules[name] for name in ["subtractive", "moog", "convfilter", "envelope", "autowah", "tremolo", "delay"]]
+        chain = [mixer] # , moog, convfilter, envelope, autowah, tremolo, delay]
         self.samplerate = 44100
 
     def process(self, outdata, *ignored):
         internal_blocksize = resampler.get_source_blocksize(BLOCKSIZE)
         buf = buffer[:internal_blocksize]
         scratch_buf = scratch_buffer[:internal_blocksize]
+        buf[:] = 0
         for module in chain:
             module.process(buf, scratch_buf)
             scratch_buf *= module.mix
@@ -201,7 +229,7 @@ class SynthEngine:
             except:
                 print(f"Failed to open MIDI file '{params[0]}'.")
                 return
-            module.envelope.mix = 1
+            envelope.mix = 1
             for message in mid.play():
                 self.handle_midi(message.note, message.velocity)
             if not midi:
@@ -210,6 +238,7 @@ class SynthEngine:
             midi_help()
 
     def handle_command(self, command, params):
+        global recording_out
         if command == "start":
             if not self.start_stream():
                 print("Already running!")
