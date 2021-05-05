@@ -14,4 +14,4 @@ def plot_response(fs, w, h, title):
     ax.set_xlabel('Frequency (Hz)')
     ax.set_ylabel('Gain (dB)')
     ax.set_title(title)
-    plt.show()
+    plt.show(block=False)

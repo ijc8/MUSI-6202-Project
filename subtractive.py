@@ -30,40 +30,13 @@ class NoiseSource(Module):
 
 
 class SubtractiveSynth(Module):
-    "Various sources with many harmonics (sawtooth, square, noise) + a resonant low-pass filter."
+    "Various sources with many harmonics (sawtooth, square, noise) + a built-in low-pass filter."
 
     def __init__(self, sample_rate, freq=55, source="sawtooth"):
         super().__init__(sample_rate)
         self.freq = freq
         self.source = source  # options: "sawtooth", "square", "noise"
         self.lpf = StateVariableFilter(sample_rate, freq*10, 1.0)
-    
-    # Wrap properties of internal LPF.
-    # TODO: Could have less boilerplate here, and ensure these are exposed as parameters in `help`.
-    # Maybe the Module interface should include get_parameters()?
-    @property
-    def cutoff(self):
-        return self.lpf.freq
-    
-    @cutoff.setter
-    def cutoff(self, value):
-        self.lpf.freq = value
-
-    @property
-    def resonance(self):
-        return self.lpf.resonance
-    
-    @resonance.setter
-    def resonance(self, value):
-        self.lpf.resonance = value
-
-    @property
-    def mode(self):
-        return self.lpf.mode
-    
-    @resonance.setter
-    def mode(self, value):
-        self.lpf.mode = value
     
     def __setattr__(self, name, value):
         super().__setattr__(name, value)

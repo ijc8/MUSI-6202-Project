@@ -177,6 +177,21 @@ class SynthEngine:
             recording_out.close()
             recording_out = None
         return True
+    
+    def get_param(self, params):
+        module, *params = params.split(".")
+        try:
+            value = modules[module]
+        except KeyError:
+            print(f"No such module '{module}'.")
+            raise
+        for param in params:
+            try:
+                value = getattr(value, param)
+            except AttributeError:
+                print(f"No such parameter '{param}'.")
+                raise
+        return value
 
     def handle_command(self, command, params):
         if command == "start":
@@ -242,14 +257,10 @@ class SynthEngine:
                 print(f"{100:6.2f}% [{'=' * 50}] {rendered_time:6.2f}/{rendered_time:.2f}")
                 print(f"Rendered {rendered_time:.2f}s to '{filename}' in {real_time:.2f}s ({rendered_time/real_time:.2f}x).")
         elif command == "get":
-            module, *params = params.split(".")
-            if module in modules:
-                value = modules[module]
-                for param in params:
-                    value = getattr(value, param)
-                print(value)
-            else:
-                print(f"No module named '{module}'.")
+            try:
+                print(self.get_param(params))
+            except (KeyError, AttributeError):
+                return
         elif command == "set":
             param_spec, value = params.split(" ", 1)
             if value == "":
@@ -272,12 +283,20 @@ class SynthEngine:
                 setattr(container, params[-1], value)
             else:
                 print(f"No module named '{module}'.")
+        elif command == "plot":
+            try:
+                filter = self.get_param(params)
+            except (KeyError, AttributeError):
+                return
+            filter.visualize_filter()
         elif command in ["exit", "quit"]:
             print("Farewell.")
             self.running = False
             return
         elif command == "help":
             help(full=True)
+        elif command == "":
+            pass
         else:
             print(f"Unrecognized command '{command}'.")
             help(full=False)

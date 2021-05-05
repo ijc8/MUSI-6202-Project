@@ -1,6 +1,8 @@
 import numpy as np
+from scipy import signal
 
 from module import Module
+import utility
 
 
 class StateVariableFilter(Module):
@@ -9,7 +11,7 @@ class StateVariableFilter(Module):
         assert (resonance >= 0.5)
         self.resonance = resonance
         self.freq = freq
-        self.prev_band, self.prev_low = 0, 0
+        self.band, self.low = 0, 0
         self.mode = mode
     
     @property
@@ -29,13 +31,23 @@ class StateVariableFilter(Module):
     def resonance(self, value):
         self._resonance = value
         self.q1 = 1/value
+    
+    def visualize_filter(self):
+        # Create a clean copy with the same settings.
+        filter = StateVariableFilter(self.sample_rate, self._freq, self._resonance, self.mode)
+        # Compute the impulse response
+        impulse = np.zeros(2048)
+        impulse[0] = 1
+        filter.process(impulse, impulse)
+        w, h = signal.freqz(impulse, worN=2048)
+        utility.plot_response(self.sample_rate, w, h, "SVF Frequency Response")
 
     def process(self, input_buffer, output_buffer):
-        mode, q1, f1, prev_band, prev_low = self.mode, self.q1, self.f1, self.prev_band, self.prev_low
+        mode, q1, f1, band, low = self.mode, self.q1, self.f1, self.band, self.low
         for i in range(len(input_buffer)):
-            low = prev_low + f1 * prev_band
-            high = input_buffer[i] - low - q1*prev_band
-            band = f1 * high + prev_band
+            low += f1 * band
+            high = input_buffer[i] - low - q1*band
+            band += f1 * high
 
             # TODO: If necessary, optimize by lifting the branch.
             if mode == 'lpf':
@@ -46,23 +58,29 @@ class StateVariableFilter(Module):
                 output_buffer[i] = high
             elif mode == 'notch':
                 output_buffer[i] = low + high
-
-            prev_band = band
-            prev_low = low
-        self.prev_band = prev_band
-        self.prev_low = prev_low
+        self.band = band
+        self.low = low
 
 
-# Algorithm from http://www.musicdsp.org/showone.php?id=24
-# Unfortunately, this seems too slow for real-time as-is.
+# Adapted from http://www.musicdsp.org/showone.php?id=24
 class MoogLPF(Module):
-    def __init__(self, sample_rate, cutoff=400, resonance=0.1):
+    def __init__(self, sample_rate, freq=400, resonance=0.1):
         super().__init__(sample_rate)
         self.stage = np.zeros(4)
         self.delay = np.zeros(4)
         self._resonance = 0
-        self.cutoff = cutoff
+        self.freq = freq
         self.resonance = resonance
+
+    def visualize_filter(self):
+        # Create a clean copy with the same settings.
+        filter = MoogLPF(self.sample_rate, self._freq, self._resonance)
+        # Compute the impulse response
+        impulse = np.zeros(2048)
+        impulse[0] = 1
+        filter.process(impulse, impulse)
+        w, h = signal.freqz(impulse, worN=2048)
+        utility.plot_response(self.sample_rate, w, h, "MoogLPF Frequency Response")
     
     def process(self, input_buffer, output_buffer):
         resonance, stage, delay, p, k, t1, t2 = self._resonance, self.stage, self.delay, self.p, self.k, self.t1, self.t2
@@ -84,20 +102,28 @@ class MoogLPF(Module):
 
             output_buffer[i] = stage[3]
 
-    def __setattr__(self, name, value):
-        if name == 'resonance':
-            self._resonance = value
-            self._update()
-        elif name == 'cutoff':
-            self._cutoff = value
-            self._update()
-        else:
-            super().__setattr__(name, value)
+    @property
+    def resonance(self):
+        return self._resonance
+    
+    @resonance.setter
+    def resonance(self, value):
+        self._resonance = value
+        self._update()
+
+    @property
+    def freq(self):
+        return self._freq
+    
+    @freq.setter
+    def freq(self, value):
+        self._freq = value
+        self._update()
     
     def _update(self):
-        cutoff = 2 * self._cutoff / self.sample_rate
-        self.p = cutoff * (1.8 - 0.8 * cutoff)
-        self.k = 2 * np.sin(cutoff * np.pi * 0.5) - 1
+        freq = 2 * self._freq / self.sample_rate
+        self.p = freq * (1.8 - 0.8 * freq)
+        self.k = 2 * np.sin(freq * np.pi * 0.5) - 1
         self.t1 = (1 - self.p) * 1.386249
         self.t2 = 12 + self.t1**2
         self.r = self._resonance * (self.t2 + 6.0 * self.t1) / (self.t2 - 6.0 * self.t1)
