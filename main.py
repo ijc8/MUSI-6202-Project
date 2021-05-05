@@ -141,7 +141,14 @@ class SynthEngine:
     def start_stream(self):
         if self.stream:
             return False
-        self.stream = sd.OutputStream(channels=1, callback=self.process, blocksize=self._blocksize, samplerate=self.external_samplerate)
+        try:
+            self.stream = sd.OutputStream(channels=1, callback=self.process, blocksize=self._blocksize, samplerate=self.external_samplerate)
+        except sd.PortAudioError:
+            print(f"Failed with channels = 1, samplerate={self.external_samplerate}. Falling back to device defaults.")
+            self.stream = sd.OutputStream(callback=self.process, blocksize=self._blocksize)
+            print(f"Now using channels = {self.stream.channels}, samplerate={self.stream.samplerate}")
+            self.external_samplerate = self.stream.samplerate
+            self.setup()
         assert(self.stream.samplerate == self.external_samplerate)
         self.stream.start()
         return True
