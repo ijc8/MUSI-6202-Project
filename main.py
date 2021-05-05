@@ -46,22 +46,23 @@ class SynthEngine:
     PARAMETERS = ("gain", "samplerate")
 
     def __init__(self):
+        self.device = None
         self.stream = None
         self.recording_out = None
         self.midi = None
         self.osc = None
         self.quantizer = Quantizer()
         self.envelope = Envelope(INTERNAL_SAMPLERATE)
-        subtractive = SubtractiveSynth(INTERNAL_SAMPLERATE)
+        self.subtractive = SubtractiveSynth(INTERNAL_SAMPLERATE)
         granular = Granular(INTERNAL_SAMPLERATE)
-        mixer = Mixer(subtractive, granular, 0.8)
+        mixer = Mixer(self.subtractive, granular, 0)
         moog = MoogLPF(INTERNAL_SAMPLERATE)
         convfilter = ConvolutionFilter(INTERNAL_SAMPLERATE)
         autowah = AutoWah(INTERNAL_SAMPLERATE, (100, 2000), 0.5, 0.5)
         tremolo = Tremolo(INTERNAL_SAMPLERATE)
         delay = Delay(INTERNAL_SAMPLERATE)
         self.modules = {
-            "subtractive": subtractive,
+            "subtractive": self.subtractive,
             "moog": moog,
             "convfilter": convfilter,
             "envelope": self.envelope,
@@ -73,6 +74,12 @@ class SynthEngine:
             "granular": granular,
             "mixer": mixer,
         }
+        # Disable most modules by default:
+        moog.mix = 0
+        convfilter.mix = 0
+        autowah.mix = 0
+        delay.mix = 0
+        tremolo.mix = 0
         # Disable envelope by default, until a MIDI source is specified.
         self.envelope.mix = 0
         # NOTE: Chain implicity ends with resampler, quantizer.
@@ -98,7 +105,7 @@ class SynthEngine:
             self.recording_out.writeframes((outdata * np.iinfo(np.int16).max).astype(np.int16))
 
     def handle_midi(self, pitch, velocity):
-        self.modules["subtractive"].freq = 2**((pitch-69)/12)*440
+        self.subtractive.freq = 2**((pitch-69)/12)*440
         self.envelope.trigger(velocity)
 
     @property
@@ -140,15 +147,27 @@ class SynthEngine:
 
     def start_stream(self, device=None):
         if self.stream:
-            return False
+            if device == self.device:
+                return False
+            else:
+                print("Stopping to switch devices. (This will interrupt recording.)")
+                self.stop_stream()
+        old_device = self.device
+        if device:
+            self.device = device
         try:
-            self.stream = sd.OutputStream(channels=1, callback=self.process, blocksize=self._blocksize, samplerate=self.external_samplerate, device=device, dither_off=True)
+            self.stream = sd.OutputStream(channels=1, callback=self.process, blocksize=self._blocksize, samplerate=self.external_samplerate, device=self.device, dither_off=True)
         except sd.PortAudioError:
             print(f"Failed with channels = 1, samplerate={self.external_samplerate}. Falling back to device defaults.")
-            self.stream = sd.OutputStream(callback=self.process, blocksize=self._blocksize, device=device, dither_off=True)
-            print(f"Now using channels = {self.stream.channels}, samplerate={self.stream.samplerate}")
-            self.external_samplerate = self.stream.samplerate
-            self.setup()
+            try:
+                self.stream = sd.OutputStream(callback=self.process, blocksize=self._blocksize, device=self.device, dither_off=True)
+                print(f"Now using channels = {self.stream.channels}, samplerate={self.stream.samplerate}")
+                self.external_samplerate = self.stream.samplerate
+                self.setup()
+            except sd.PortAudioError:
+                print("Still failed! Maybe try a different device? (List with `devices`, then run `start <index>`.)")
+                self.device = old_device
+                return True
         assert(self.stream.samplerate == self.external_samplerate)
         self.stream.start()
         return True
@@ -265,7 +284,7 @@ class SynthEngine:
         print("OSC commands:")
         print("  osc start [port, defaults to 8000]")
         print("  osc stop")
-        print("  (Responses to `/<module>/<param> <value>`; e.g. `/subtractive/freq 400`)")
+        print("  (Responds to `/<module>/<param> <value>`; e.g. `/subtractive/freq 400`)")
     
     def stop_osc(self):
         try:

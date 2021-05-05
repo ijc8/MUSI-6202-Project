@@ -14,11 +14,13 @@ Requirements:
 - Several filters: SVF, FIR (as described above), and an LPF emulating the classic Moog ladder filter. There are multiple instances of the SVF (as submodules of the subtractive synth and auto-wah).
   Filters may be visualized with `plot <filter module>`.
 - All modules have a `mix` parameter controlling the balance between wet and dry.
-- Input musical data via `midi connect` or `midi file`.
+- Input musical data via `midi connect` (run `midi list` to see devices) or `midi file`.
 - Audio output is streaming by default (run `start`), may optionally be recorded live (`record`) or rendered (`render`).
 - Output sample rate and bit depth are configurable. `set engine.samplerate <value>` and `set quantizer.depth <value>`, respectively.
 
 Run `help` to see all available parameters and their current settings.
+
+**NOTE:** Most modules are turned off at the start to simplify confirmation that audio output is working. Turn them on with `set <module name>.mix 1`.
 
 Example interaction:
 
@@ -35,6 +37,7 @@ Example interaction:
     > set engine.samplerate 8000
     > set engine.samplerate 1000
     > set engine.samplerate 44100
+    > set delay.mix 1
     > set delay.preset chorus
     > render 10 foo.wav
     File 'foo.wav' already exists. Overwrite? [y/N] y
