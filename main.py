@@ -28,15 +28,22 @@ modules = None
 chain = None
 resampler = None
 buffer = None
+scratch_buffer = None
 quantizer = None
+envelope = None
 stream = None
 recording_out = None
 midi = None
 
 def callback(outdata, *ignored):
-    buf = buffer[:resampler.get_source_blocksize(BLOCKSIZE)]
+    internal_blocksize = resampler.get_source_blocksize(BLOCKSIZE)
+    buf = buffer[:internal_blocksize]
+    scratch_buf = scratch_buffer[:internal_blocksize]
     for module in chain:
-        module.process(buf, buf)
+        module.process(buf, scratch_buf)
+        scratch_buf *= module.mix
+        buf *= (1 - module.mix)
+        buf += scratch_buf
     resampler.process(buf, outdata)
     quantizer.process(outdata, outdata)
     if recording_out:
@@ -62,7 +69,7 @@ def help(full=False):
 
 def midi_callback(pitch, velocity):
     modules["subtractive"].freq = 2**((pitch-69)/12)*440
-    modules["envelope"].trigger(velocity)
+    envelope.trigger(velocity)
 
 def midi_help():
     print("MIDI commands:")
@@ -98,11 +105,13 @@ def midi_command(params):
             print(f"No device named '{name}'.")
             midi = None
             return
-        print(f"Connected to '{midi.port.name}'.")
+        print(f"Connected to '{midi.port.name}'; enabling envelope.")
+        envelope.mix = 1
     elif command == "disconnect":
         if midi:
-            print(f"Disconnected from '{midi.port.name}'.")
+            print(f"Disconnected from '{midi.port.name}'; disabling envelope.")
             midi.disconnect()
+            envelope.mix = 0
     elif command == "file":
         if not params:
             print("Usage: midi file <filename>")
@@ -112,28 +121,34 @@ def midi_command(params):
         except:
             print(f"Failed to open MIDI file '{params[0]}'.")
             return
+        module.envelope.mix = 1
         for message in mid.play():
             midi_callback(message.note, message.velocity)
+        if not midi:
+            envelope.mix = 0
     else:
         midi_help()
 
 class SynthEngine:
     def __init__(self):
-        global modules, resampler, quantizer, chain
+        global modules, resampler, quantizer, envelope, chain
         quantizer = Quantizer()
+        envelope = Envelope(INTERNAL_SAMPLERATE)
         modules = {
             "subtractive": SubtractiveSynth(INTERNAL_SAMPLERATE),
             "moog": MoogLPF(INTERNAL_SAMPLERATE),
             "convfilter": ConvolutionFilter(INTERNAL_SAMPLERATE),
-            "envelope": Envelope(INTERNAL_SAMPLERATE),
+            "envelope": envelope,
             "autowah": AutoWah(INTERNAL_SAMPLERATE, (100, 2000), 0, 0.5),
             "delay": Delay(INTERNAL_SAMPLERATE),
             "tremolo": Tremolo(INTERNAL_SAMPLERATE),
             "quantizer": quantizer,
             "engine": self,
         }
+        # Disable envelope by default, until a MIDI source is specified.
+        envelope.mix = 0
         # NOTE: Chain implicity ends with resampler, quantizer.
-        chain = [modules[name] for name in ["subtractive", "moog", "convfilter"]] # "envelope", "autowah", "tremolo", "delay"]]
+        chain = [modules[name] for name in ["subtractive", "moog", "convfilter", "envelope", "autowah", "tremolo", "delay"]]
         self.samplerate = 44100
 
     @property
@@ -152,10 +167,11 @@ class SynthEngine:
             self.start_stream()
 
     def setup(self):
-        global modules, chain, resampler, buffer, quantizer
+        global resampler, buffer, scratch_buffer
         print(f"Setup: internal sample rate = {INTERNAL_SAMPLERATE}, external sample rate = {self.external_samplerate}, block size = {BLOCKSIZE}")
         resampler = Resampler(INTERNAL_SAMPLERATE, self.external_samplerate)
         buffer = resampler.make_source_buffer(BLOCKSIZE)
+        scratch_buffer = resampler.make_source_buffer(BLOCKSIZE)
         modules["resampler"] = resampler
 
     def start_stream(self):

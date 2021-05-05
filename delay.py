@@ -5,9 +5,8 @@ from module import Module
 
 class ModulatedDelay(Module):
     def __init__(self, sample_rate, duration, mix, feedback):
-        super().__init__(sample_rate)
+        super().__init__(sample_rate, mix=mix)
         self.buffer = np.zeros(int(duration * sample_rate))
-        self.mix = mix
         self.feedback = feedback
         self.buffer_index = 0
     
@@ -21,14 +20,14 @@ class ModulatedDelay(Module):
         self.buffer = np.zeros(int(duration * sample_rate))
     
     def process(self, delays, input_buffer, output_buffer):
-        buffer, buffer_index, mix, feedback = self.buffer, self.buffer_index, self.mix, self.feedback
+        buffer, buffer_index, feedback = self.buffer, self.buffer_index, self.feedback
         for i in range(len(input_buffer)):
             delay = delays[i]
             d = int(delay)
             frac = delay - d
             out = frac * buffer[(buffer_index - d - 1) % len(buffer)] + (1 - frac) * buffer[(buffer_index - d) % len(buffer)]
             buffer[buffer_index] = (1 - feedback) * input_buffer[i] + feedback * out
-            output_buffer[i] = mix * out + (1-mix) * input_buffer[i]
+            output_buffer[i] = out
             buffer_index += 1
             if buffer_index >= len(buffer):
                 buffer_index %= len(buffer)
