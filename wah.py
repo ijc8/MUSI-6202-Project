@@ -5,6 +5,9 @@ from module import Module
 
 # TODO: Reduce duplication with StateVariableFilter?
 class ModulatedSVF(Module):
+
+    PARAMETERS = ("resonance", "mode", "mix")
+
     def __init__(self, sample_rate, resonance, mode='lpf'):
         super().__init__(sample_rate)
         assert (resonance >= 0.5)
@@ -47,20 +50,15 @@ class ModulatedSVF(Module):
 
 
 class AutoWah(Module):
+
+    PARAMETERS = ("freq_range", "rate", "bpf", "mix")
+
     def __init__(self, sample_rate, freq_range, rate, resonance):
         super().__init__(sample_rate)
         self.freq_range = freq_range
         self.rate = rate
         self.bpf = ModulatedSVF(sample_rate, resonance, 'bpf')
         self.time = 0
-
-    @property
-    def resonance(self):
-        return self.bpf.resonance
-    
-    @resonance.setter
-    def resonance(self, value):
-        self.bpf.resonance = value
     
     def process(self, input_buffer, output_buffer):
         times = self.time + np.arange(len(input_buffer))/self.sample_rate

@@ -12,6 +12,9 @@ INTERNAL_SAMPLERATE = 48000
 
 
 class Granular(Module):
+
+    PARAMETERS = ("speed", "grain_size", "filename", "overlap", "mix")
+
     def __init__(self, sample_rate, speed=1, filename="example.wav", grain_size=0.1):
         super().__init__(sample_rate)
         self.time = 0

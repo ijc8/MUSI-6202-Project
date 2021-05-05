@@ -32,6 +32,8 @@ class NoiseSource(Module):
 class SubtractiveSynth(Module):
     "Various sources with many harmonics (sawtooth, square, noise) + a built-in low-pass filter."
 
+    PARAMETERS = ("freq", "source", "lpf")
+
     def __init__(self, sample_rate, freq=55, source="sawtooth"):
         super().__init__(sample_rate)
         self.freq = freq

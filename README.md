@@ -5,6 +5,20 @@ Run:
     pip install -r requirements.txt
     python3 main.py
 
+Requirements:
+- There are two kinds of synth engines (subtractive and granular). The mix can be controlled with `set mixer.mix <value between 0 and 1>`.
+- There is a CLI (and only a CLI).
+- There is a fixed, well-defined signal chain (see `SynthEngine.__init__` inside `main.py`)
+- Three modulated effects: auto-wah, tremolo, modulated delay-line with feedback (load presets with `set delay.preset <chorus, vibrato, flanger...>`).
+- Convolution-based filtering. (Automated FIR filter design via Parks-McClellan.)
+- Several filters: SVF, FIR (as described above), and an LPF emulating the classic Moog ladder filter. There are multiple instances of the SVF (as submodules of the subtractive synth and auto-wah).
+- All modules have a `mix` parameter controlling the balance between wet and dry.
+- Input musical data via `midi connect` or `midi file`.
+- Audio output is streaming by default (run `start`), may optionally be recorded live (`record`) or rendered (`render`).
+- Output sample rate and bit depth are configurable. `set engine.samplerate <value>` and `set quantizer.depth <value>`, respectively.
+
+Run `help` to see all available parameters and their current settings.
+
 Example interaction:
 
     $ python main.py

@@ -4,6 +4,8 @@ from module import Module
 class Envelope(Module):
     "Simple Attack/Decay Envelope"
 
+    PARAMETERS = ("attack", "decay", "mix")
+
     def __init__(self, sample_rate, attack=0.01, decay=0.3):
         super().__init__(sample_rate)
         self.attack = attack

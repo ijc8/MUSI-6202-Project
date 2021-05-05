@@ -60,6 +60,8 @@ class Mixer(Module):
 
 
 class SynthEngine:
+    PARAMETERS = ("gain", "samplerate")
+
     def __init__(self):
         global resampler, quantizer, envelope, chain
         quantizer = Quantizer()
@@ -178,6 +180,7 @@ class SynthEngine:
         print("  render <duration in seconds> [filename, defaults to 'out.wav']")
         print("  get <module>.<param>")
         print("  set <module>.<param> <value>")
+        print("  plot <filter module>")
         print("  help")
         midi_help()
         if full:
@@ -185,8 +188,13 @@ class SynthEngine:
             # TODO: Recursively list parameters for embedded modules.
             for name, module in self.modules.items():
                 print("  " + name)
-                for attr in vars(module):
-                    print(f"    {name}.{attr}")
+                for param in module.PARAMETERS:
+                    value = getattr(module, param)
+                    if isinstance(value, Module):
+                        for subparam in value.PARAMETERS:
+                            print(f"    {name}.{param}.{subparam}: {getattr(value, subparam)}")
+                    else:
+                        print(f"    {name}.{param}: {value}")
 
     def midi_command(self, params):
         global midi

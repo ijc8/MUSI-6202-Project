@@ -1,4 +1,7 @@
 class Module:
+
+    PARAMETERS = ("mix",)
+
     def __init__(self, sample_rate, mix=1):
         self.sample_rate = sample_rate
         self.mix = mix

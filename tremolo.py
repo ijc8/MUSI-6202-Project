@@ -4,6 +4,9 @@ from module import Module
 
 
 class Tremolo(Module):
+
+    PARAMETERS = ("rate", "amp", "mix")
+
     def __init__(self, sample_rate, rate=8, amp=0.73):
         super().__init__(sample_rate)
         self.rate = rate

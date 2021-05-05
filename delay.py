@@ -4,6 +4,9 @@ from module import Module
 
 
 class ModulatedDelay(Module):
+
+    PARAMETERS = ("duration", "feedback", "mix")
+
     def __init__(self, sample_rate, duration, mix, feedback):
         super().__init__(sample_rate, mix=mix)
         self.buffer = np.zeros(int(duration * sample_rate))
@@ -35,6 +38,9 @@ class ModulatedDelay(Module):
 
 
 class Delay(Module):
+
+    PARAMETERS = ("mod_amp", "fixed_delay", "rate", "preset", "delay", "mix")
+
     def __init__(self, sample_rate):
         super().__init__(sample_rate)
         self.delay = ModulatedDelay(sample_rate, 1.0, 1.0, 0)

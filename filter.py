@@ -6,6 +6,9 @@ import utility
 
 
 class StateVariableFilter(Module):
+
+    PARAMETERS = ("resonance", "freq", "mode", "mix")
+
     def __init__(self, sample_rate, freq, resonance, mode='lpf'):
         super().__init__(sample_rate)
         assert (resonance >= 0.5)
@@ -64,6 +67,9 @@ class StateVariableFilter(Module):
 
 # Adapted from http://www.musicdsp.org/showone.php?id=24
 class MoogLPF(Module):
+
+    PARAMETERS = ("resonance", "freq", "mix")
+
     def __init__(self, sample_rate, freq=10000, resonance=0.1):
         super().__init__(sample_rate)
         self.stage = np.zeros(4)

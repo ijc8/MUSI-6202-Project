@@ -23,6 +23,8 @@ class ShortConvolver(Module):
 class ConvolutionFilter(Module):
     "Filter audio by convolving with Parks-McClellan/Remez exchange algorithm-designed FIR."
 
+    PARAMETERS = ("order", "freq", "bandwidth", "transition_width", "type", "mix")
+
     def __init__(self, sample_rate, order=28, freq=1000, bandwidth=400, transition_width=300, type="bpf"):
         super().__init__(sample_rate)
         self._order = order

@@ -3,6 +3,9 @@ import numpy as np
 from module import Module
 
 class Quantizer(Module):
+
+    PARAMETERS = ("depth", "dither", "mix")
+
     def __init__(self, depth=16, dither='triangular'):
         super().__init__(None)  # NOTE: Sample rate is irrelevant for this module.
         self.depth = depth
