@@ -138,14 +138,14 @@ class SynthEngine:
         self.scratch_buffer = self.resampler.make_source_buffer(self._blocksize)
         self.modules["resampler"] = self.resampler
 
-    def start_stream(self):
+    def start_stream(self, device=None):
         if self.stream:
             return False
         try:
-            self.stream = sd.OutputStream(channels=1, callback=self.process, blocksize=self._blocksize, samplerate=self.external_samplerate)
+            self.stream = sd.OutputStream(channels=1, callback=self.process, blocksize=self._blocksize, samplerate=self.external_samplerate, device=device)
         except sd.PortAudioError:
             print(f"Failed with channels = 1, samplerate={self.external_samplerate}. Falling back to device defaults.")
-            self.stream = sd.OutputStream(callback=self.process, blocksize=self._blocksize)
+            self.stream = sd.OutputStream(callback=self.process, blocksize=self._blocksize, device=device)
             print(f"Now using channels = {self.stream.channels}, samplerate={self.stream.samplerate}")
             self.external_samplerate = self.stream.samplerate
             self.setup()
@@ -180,6 +180,7 @@ class SynthEngine:
 
     def help(self, full=False):
         print("Available commands:")
+        print("  devices")
         print("  start")
         print("  stop")
         print("  record [filename, defaults to 'out.wav']")
@@ -322,8 +323,17 @@ class SynthEngine:
         elif command == "osc":
             command, *params = params.split(" ", 1)
             self.handle_osc_command(command, params[0] if params else '')
+        elif command == "devices":
+            print(sd.query_devices())
         elif command == "start":
-            if not self.start_stream():
+            device = None
+            if params:
+                try:
+                    device = int(params)
+                except ValueError:
+                    print("Usage: start [device index]")
+                    return
+            if not self.start_stream(device):
                 print("Already running!")
         elif command == "stop":
             if not self.stop_stream():
