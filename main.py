@@ -49,6 +49,7 @@ class SynthEngine:
         self.stream = None
         self.recording_out = None
         self.midi = None
+        self.osc = None
         self.quantizer = Quantizer()
         self.envelope = Envelope(INTERNAL_SAMPLERATE)
         subtractive = SubtractiveSynth(INTERNAL_SAMPLERATE)
@@ -170,13 +171,6 @@ class SynthEngine:
                 raise
         return value
 
-    def midi_help(self):
-        print("MIDI commands:")
-        print("  midi list")
-        print("  midi connect [device name or index, defaults to 0]")
-        print("  midi disconnect")
-        print("  midi file <filename>")
-
     def help(self, full=False):
         print("Available commands:")
         print("  start")
@@ -188,6 +182,7 @@ class SynthEngine:
         print("  plot <filter module>")
         print("  help")
         self.midi_help()
+        self.osc_help()
         if full:
             print("Modules and parameters:")
             # TODO: Recursively list parameters for embedded modules.
@@ -201,8 +196,14 @@ class SynthEngine:
                     else:
                         print(f"    {name}.{param}: {value}")
 
-    def midi_command(self, params):
-        command, *params = params.split(" ", 1)
+    def midi_help(self):
+        print("MIDI commands:")
+        print("  midi list")
+        print("  midi connect [device name or index, defaults to 0]")
+        print("  midi disconnect")
+        print("  midi file <filename>")
+
+    def handle_midi_command(self, command, params):
         if command == "list":
             print("Available MIDI inputs:")
             for index, name in enumerate(mido.get_input_names()):
@@ -214,10 +215,10 @@ class SynthEngine:
             name = None
             if params:
                 try:
-                    index = int(params[0])
+                    index = int(params)
                     name = mido.get_input_names()[index]
                 except ValueError:
-                    name = params[0]
+                    name = params
                 except IndexError:
                     print(f"No device with index {index}.")
             try:
@@ -240,9 +241,9 @@ class SynthEngine:
                 print("Usage: midi file <filename>")
                 return
             try:
-                mid = mido.MidiFile(params[0])
+                mid = mido.MidiFile(params)
             except:
-                print(f"Failed to open MIDI file '{params[0]}'.")
+                print(f"Failed to open MIDI file '{params}'.")
                 return
             self.envelope.mix = 1
             for message in mid.play():
@@ -251,13 +252,72 @@ class SynthEngine:
                 self.envelope.mix = 0
         else:
             self.midi_help()
+    
+    def osc_help(self):
+        print("OSC commands:")
+        print("  osc start [port, defaults to 8000]")
+        print("  osc stop")
+        print("  (Responses to `/<module>/<param> <value>`; e.g. `/subtractive/freq 400`)")
+    
+    def stop_osc(self):
+        try:
+            self.osc.stop()
+            self.osc.default_socket = None
+            return True
+        except RuntimeError:
+            return False
+    
+    def handle_osc_command(self, command, params):
+        try:
+            from oscpy.server import OSCThreadServer
+        except ImportError:
+            print("OSC commands require oscpy (run `pip install oscpy`).")
+            return
+    
+        if command == "start":
+            port = 8000
+            if params:
+                try:
+                    port = int(params)
+                except ValueError:
+                    print("Usage: osc start [port, defaults to 8000]")
+                    return
+            if not self.osc:
+                self.osc = OSCThreadServer(advanced_matching=True, default_handler=self.handle_osc_message)
+            elif self.stop_osc():
+                print("Stopped server.")
+            self.osc.listen(address='0.0.0.0', port=port, default=True)
+            print(f"Started server on port {port}.")
+        elif command == "stop":
+            if self.stop_osc():
+                print("Stopped server.")
+            else:
+                print("Not running!")
+        else:
+            self.osc_help()
+
+    def handle_osc_message(self, address, value):
+        print("Received OSC message:", address, value)
+        # Set a parameter via OSC.
+        module, *params = address.decode('utf8').strip("/").split("/")
+        if module in self.modules:
+            container = self.modules[module]
+            for param in params[:-1]:
+                container = getattr(container, param)
+            setattr(container, params[-1], value)
+        else:
+            print(f"No module named '{module}'.")
 
     def handle_command(self, command, params):
-        if command == "start":
+        if command == "midi":
+            command, *params = params.split(" ", 1)
+            self.handle_midi_command(command, params[0] if params else '')
+        elif command == "osc":
+            command, *params = params.split(" ", 1)
+            self.handle_osc_command(command, params[0] if params else '')
+        elif command == "start":
             if not self.start_stream():
                 print("Already running!")
-        elif command == "midi":
-            self.midi_command(params)
         elif command == "stop":
             if not self.stop_stream():
                 print("Not running!")
