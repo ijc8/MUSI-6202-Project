@@ -57,6 +57,7 @@ class LinearResampler(Resampler):
         source_time -= len(input_buffer)
         self.source_time = source_time
         # NOTE: The [:] here is essential, as the underlying input_buffer may be modified later.
+        # NOTE: This assumes input_buffer and output_buffer are not the same buffer, which is probably safe for a resampler.
         self.last_samples[:] = input_buffer[-2:]
 
 def spline(y0, y1, y2, y3, x):
@@ -122,4 +123,5 @@ class CubicResampler(Resampler):
         source_time -= len(input_buffer)
         self.source_time = source_time
         # NOTE: The [:] here is essential, as the underlying input_buffer may be modified later.
+        # NOTE: This assumes input_buffer and output_buffer are not the same buffer, which is probably safe for a resampler.
         self.last_samples[:] = input_buffer[-4:]

@@ -11,6 +11,7 @@ import sounddevice as sd
 from convolution import ConvolutionFilter
 from delay import Delay
 from envelope import Envelope
+from filter import MoogLPF
 from example_module import ExampleModule
 from midi import MIDISource
 from quantize import Quantizer
@@ -44,22 +45,23 @@ def callback(outdata, *ignored):
 
 def setup():
     global modules, chain, resampler, buffer, quantizer
-    print(f"Setup: internal sample rate = {INTERNAL_SAMPLERATE}, external sample rate = {EXTERNAL_SAMPLERATE}")
+    print(f"Setup: internal sample rate = {INTERNAL_SAMPLERATE}, external sample rate = {EXTERNAL_SAMPLERATE}, block size = {BLOCKSIZE}")
     resampler = Resampler(INTERNAL_SAMPLERATE, EXTERNAL_SAMPLERATE)
     buffer = resampler.make_source_buffer(BLOCKSIZE)
     quantizer = Quantizer(EXTERNAL_SAMPLERATE)
     modules = {
         "subtractive": SubtractiveSynth(INTERNAL_SAMPLERATE),
+        "moog": MoogLPF(INTERNAL_SAMPLERATE),
+        "convfilter": ConvolutionFilter(INTERNAL_SAMPLERATE),
         "envelope": Envelope(INTERNAL_SAMPLERATE),
         "autowah": AutoWah(INTERNAL_SAMPLERATE, (100, 2000), 0, 0.5),
         "delay": Delay(INTERNAL_SAMPLERATE),
         "tremolo": Tremolo(INTERNAL_SAMPLERATE),
         "resampler": resampler,
         "quantizer": quantizer,
-        "convfilter": ConvolutionFilter(INTERNAL_SAMPLERATE, 30, 500, 200),
     }
     # NOTE: Chain implicity ends with resampler, quantizer.
-    chain = [modules[name] for name in ["subtractive", "convfilter"]] # "envelope", "autowah", "tremolo", "delay"]]
+    chain = [modules[name] for name in ["subtractive", "moog", "convfilter"]] # "envelope", "autowah", "tremolo", "delay"]]
 
 def stop():
     global stream, recording_out
