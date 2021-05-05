@@ -24,7 +24,6 @@ from wah import AutoWah
 
 
 INTERNAL_SAMPLERATE = 48000
-BLOCKSIZE = 2048
 
 
 # One-off module to combine our two synth sources.
@@ -77,11 +76,12 @@ class SynthEngine:
         self.envelope.mix = 0
         # NOTE: Chain implicity ends with resampler, quantizer.
         self.chain = [mixer, moog, convfilter, self.envelope, autowah, tremolo, delay]
+        self._blocksize = 2048
         self.samplerate = 44100
         self.gain = 1
 
     def process(self, outdata, *ignored):
-        internal_blocksize = self.resampler.get_source_blocksize(BLOCKSIZE)
+        internal_blocksize = self.resampler.get_source_blocksize(len(outdata))
         buf = self.buffer[:internal_blocksize]
         scratch_buf = self.scratch_buffer[:internal_blocksize]
         buf[:] = 0
@@ -114,18 +114,33 @@ class SynthEngine:
         if restart:
             print("Restarting stream.")
             self.start_stream()
+    
+    @property
+    def blocksize(self):
+        return self._blocksize
+    
+    @blocksize.setter
+    def blocksize(self, value):
+        restart = self.stop_stream()
+        if restart:
+            print("Stopping the stream to change the block size. (This will interrupt recording.)")
+        self._blocksize = value
+        self.setup()
+        if restart:
+            print("Restarting stream.")
+            self.start_stream()
 
     def setup(self):
-        print(f"Setup: internal sample rate = {INTERNAL_SAMPLERATE}, external sample rate = {self.external_samplerate}, block size = {BLOCKSIZE}")
+        print(f"Setup: internal sample rate = {INTERNAL_SAMPLERATE}, external sample rate = {self.external_samplerate}, block size = {self._blocksize}")
         self.resampler = Resampler(INTERNAL_SAMPLERATE, self.external_samplerate)
-        self.buffer = self.resampler.make_source_buffer(BLOCKSIZE)
-        self.scratch_buffer = self.resampler.make_source_buffer(BLOCKSIZE)
+        self.buffer = self.resampler.make_source_buffer(self._blocksize)
+        self.scratch_buffer = self.resampler.make_source_buffer(self._blocksize)
         self.modules["resampler"] = self.resampler
 
     def start_stream(self):
         if self.stream:
             return False
-        self.stream = sd.OutputStream(channels=1, callback=self.process, blocksize=BLOCKSIZE, samplerate=self.external_samplerate)
+        self.stream = sd.OutputStream(channels=1, callback=self.process, blocksize=self._blocksize, samplerate=self.external_samplerate)
         assert(self.stream.samplerate == self.external_samplerate)
         self.stream.start()
         return True
