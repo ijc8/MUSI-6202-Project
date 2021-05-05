@@ -59,6 +59,7 @@ def setup():
         "tremolo": Tremolo(INTERNAL_SAMPLERATE),
         "resampler": resampler,
         "quantizer": quantizer,
+        "engine": synth,
     }
     # NOTE: Chain implicity ends with resampler, quantizer.
     chain = [modules[name] for name in ["subtractive", "moog", "convfilter"]] # "envelope", "autowah", "tremolo", "delay"]]
@@ -91,8 +92,6 @@ def help(full=False):
             print("  " + name)
             for attr in vars(module):
                 print(f"    {name}.{attr}")
-
-setup()
 
 def midi_callback(pitch, velocity):
     modules["subtractive"].freq = 2**((pitch-69)/12)*440
@@ -151,14 +150,20 @@ def midi_command(params):
     else:
         midi_help()
 
-try:
-    while True:
-        try:
-            command, *params = input("> ").split(" ", 1)
-        except EOFError:
-            # Allow Ctrl+D to exit.
-            print()
-            break
+class Synth:
+    def __init__(self):
+        pass
+
+    @property
+    def samplerate(self):
+        return EXTERNAL_SAMPLERATE
+    
+    @samplerate.setter
+    def samplerate(self, value):
+        raise NotImplementedError
+
+    def handle_command(self, command, params):
+        global stream
         if command == "start":
             if stream:
                 print("Already running!")
@@ -167,19 +172,19 @@ try:
                 assert(stream.samplerate == EXTERNAL_SAMPLERATE)
                 stream.start()
         elif command == "midi":
-            midi_command(params[0] if params else '')
+            midi_command(params)
         elif command == "stop":
             if not stop():
                 print("Not running!")
         elif command == "record":
-            filename = params[0] if params else "out.wav"
+            filename = params or "out.wav"
             if not filename.endswith(".wav"):
                 filename += ".wav"
             if os.path.exists(filename):
                 overwrite = input(f"File '{filename}' already exists. Overwrite? [y/N] ")
                 if not overwrite.lower().startswith('y'):
                     print("Not overwriting.")
-                    continue
+                    return
             print(f"Recording to '{filename}'. Type 'stop' to stop.")
             recording_out = wave.open(filename, 'wb')
             recording_out.setnchannels(1)
@@ -190,7 +195,7 @@ try:
                 assert(stream.samplerate == EXTERNAL_SAMPLERATE)
                 stream.start()
         elif command == "render":
-            duration, *params = params[0].split(" ", 1)
+            duration, *params = params.split(" ", 1)
             duration = float(duration)
             filename = params[0] if params else "out.wav"
             if not filename.endswith(".wav"):
@@ -199,7 +204,7 @@ try:
                 overwrite = input(f"File '{filename}' already exists. Overwrite? [y/N] ")
                 if not overwrite.lower().startswith('y'):
                     print("Not overwriting.")
-                    continue
+                    return
             stop()
             with wave.open(filename, 'wb') as w:
                 w.setnchannels(1)
@@ -228,7 +233,7 @@ try:
                 print(f"{100:6.2f}% [{'=' * 50}] {rendered_time:6.2f}/{rendered_time:.2f}")
                 print(f"Rendered {rendered_time:.2f}s to '{filename}' in {real_time:.2f}s ({rendered_time/real_time:.2f}x).")
         elif command == "get":
-            module, *params = params[0].split(".")
+            module, *params = params.split(".")
             if module in modules:
                 value = modules[module]
                 for param in params:
@@ -237,11 +242,11 @@ try:
             else:
                 print(f"No module named '{module}'.")
         elif command == "set":
-            try:
-                param_spec, value = params[0].split(" ", 1)
-            except ValueError:
+            param_spec, value = params.split(" ", 1)
+            if value == "":
+                # TODO: Maybe allow defaults?
                 print("Missing value.")
-                continue
+                return
             module, *params = param_spec.split(".")
             try:
                 value = ast.literal_eval(value)
@@ -250,7 +255,7 @@ try:
                 pass
             except SyntaxError as e:
                 print(e)
-                continue
+                return
             if module in modules:
                 container = modules[module]
                 for param in params[:-1]:
@@ -258,15 +263,34 @@ try:
                 setattr(container, params[-1], value)
             else:
                 print(f"No module named '{module}'.")
+        elif command in ["exit", "quit"]:
+            print("Farewell.")
+            self.running = False
+            return
         elif command == "help":
             help(full=True)
         else:
             print(f"Unrecognized command '{command}'.")
             help(full=False)
 
-except KeyboardInterrupt:
-    # Allow Ctrl+C to exit.
-    print()
-    pass
+    def run(self):
+        self.running = True
+        try:
+            while self.running:
+                try:
+                    command, *params = input("> ").split(" ", 1)
+                except EOFError:
+                    # Allow Ctrl+D to exit.
+                    print()
+                    self.running = False
+                    return
+                self.handle_command(command, params[0] if params else '')
+        except KeyboardInterrupt:
+            # Allow Ctrl+C to exit.
+            print()
 
-stop()
+        stop()
+
+synth = Synth()
+setup()
+synth.run()
